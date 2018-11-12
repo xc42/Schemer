@@ -19,6 +19,7 @@ struct Expr
     Expr(Type t):type(t){}
     virtual std::string to_string()=0;
     virtual Ptr eval(std::shared_ptr<Environment> env)=0;
+    virtual ~Expr()=default;
 };
 
 struct Number:Expr, std::enable_shared_from_this<Number>
