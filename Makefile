@@ -1,6 +1,6 @@
 cxxfiles=$(filter %.cpp,$(shell ls))
 objs=$(subst .cpp,.o,$(cxxfiles))
-CXXFLAGS=-std=c++11 -O2
+CXXFLAGS=-std=c++17 -g
 
 
 all:$(objs)

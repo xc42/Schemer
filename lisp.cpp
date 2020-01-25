@@ -1,152 +1,109 @@
-#include <exception>
-#include <iostream>
-#include <cctype>
 #include "lisp.h"
+#include <unordered_set>
+#include <memory>
+#include <cctype>
+#include <cassert>
+#include <iostream>
+#include <sstream>
 
-//global lisp symbol 
-const std::shared_ptr<Symbol> LISP_FALSE = std::make_shared<Symbol>("#f"); 
-const std::shared_ptr<Symbol> LISP_TRUE = std::make_shared<Symbol>("#t"); //anything not false is true
+void NumberE::accept(VisitorE& v) { v.forNumber(*this); }
+void SymbolE::accept(VisitorE& v) { v.forSymbol(*this); }
+void Quote::accept(VisitorE& v) { v.forQuote(*this); }
+void Define::accept(VisitorE& v) { v.forDefine(*this); }
+void If::accept(VisitorE& v) { v.forIf(*this); }
+void LambdaE::accept(VisitorE& v) { v.forLambda(*this); }
+void Application::accept(VisitorE& v) { v.forApplication(*this); }
 
-Expr::Ptr Symbol::eval(Environment::Ptr env){
-    return env->find_value(name);
+void NumberV::accept(VisitorV& v) { v.forNumber(*this); }
+void SymbolV::accept(VisitorV& v) { v.forSymbol(*this); }
+void LambdaV::accept(VisitorV& v) { v.forAppliable(*this); }
+void Procedure::accept(VisitorV& v) { v.forAppliable(*this); }
+void Cons::accept(VisitorV& v) { v.forCons(*this); }
+void Boolean::accept(VisitorV& v) { v.forBoolean(*this); }
+
+Environment::Ptr Environment::extend(const LambdaE::ParamsType& names, Appliable::Arg& values, const Environment::Ptr& old) {
+    auto new_env = std::make_shared<Environment>();
+    new_env->outer_ = old;
+    check_args_exact(values, names.size());
+    for(size_t i = 0; i < names.size(); ++i)
+        new_env->bind(*names[i], values[i]);
+
+    return new_env;
 }
 
-Expr::Ptr List::eval(Environment::Ptr env)
-{
-    if(can_iterate(shared_from_this()))
-        return apply(expr, next_list(), env);
-    else
-        return shared_from_this();
-}
-
-bool List::length_equals(long len) 
-{
-    if(len < 0) return false;
-    if(expr == nullptr)
-        return 0 == len;
-    else {
-        if(next == nullptr)
-            return 1 == len;
-        else
-            return next_list()->length_equals(len-1);
+void Evaluator::forSymbol(SymbolE& s) {
+    result_ = (*env_)(s);
+    if(result_ == nullptr) {
+        throw std::invalid_argument{"unbounded variable: " + *s.ptr_};
     }
 }
 
-long List::length() {
-    if(expr == nullptr)
-        return 0;
-    else {
-        if(next == nullptr)
-            return 1;
-        else 
-            return 1 + next_list()->length();
+void Evaluator::forDefine(Define &def) {
+    def.body_->accept(*this);
+    env_->bind(*def.name_, result_);
+}
+
+void Evaluator::forIf(If &if_expr) {
+    if_expr.pred_->accept(*this);
+    assert(result_->type_ == Value::Type::Boolean);
+    if(*std::static_pointer_cast<Boolean>(result_)) {
+        if_expr.conseq_->accept(*this);
+    }else {
+        if_expr.alter_->accept(*this);
     }
 }
 
-std::string List::to_string() {
-    std::string str{"("};
-    auto iter = shared_from_this();
-    while(can_iterate(iter)) {
-        str += iter->expr->to_string();
-        if(iter->next != nullptr) {
-            if(next->type != Expr::Type::List) { //cons cell
-                str += " . " + next->to_string();
-                break;
-            }
-            else { //succesive list
-                if(can_iterate(iter->next_list())) {
-                    str += " ";
-                    iter = iter->next_list();
-                }
-                else //next is empty list whoes expr is null
-                    break;
-            }
-        }
-        else //next is nullptr
-            break;
-    }
-    str += ")";
-    return str;
+void Evaluator::forLambda(LambdaE &lambda) {
+    result_ = std::make_unique<LambdaV>(std::move(lambda), env_);
 }
 
-void Environment::add_bindings(List::Ptr vars, List::Ptr vals) 
-{
-    while(List::can_iterate(vars) && List::can_iterate(vals)) {
-        symtable.insert({std::static_pointer_cast<Symbol>(vars->expr)->name,
-                         vals->expr});
-
-        vars = vars->next_list();
-        vals = vals->next_list();
+void Evaluator::forApplication(Application &app) {
+    app.operator_->accept(*this);
+    auto rator = std::dynamic_pointer_cast<Appliable>(result_);
+    assert(rator != nullptr);
+    
+    std::vector<Value::Ptr> rands;
+    for(auto &rand: app.operands_) {
+        rand->accept(*this);
+        rands.emplace_back(result_);
     }
-    if(List::can_iterate(vars) || List::can_iterate(vals))
-        throw std::invalid_argument("Number of parameters and arguments don't match!\n");
+    result_ = rator->apply(rands);
 }
 
-void Environment::add_bindings(const Table &pairs)
-{
-    for(const auto &var_val: pairs) 
-        symtable.insert(var_val);
+Value::Ptr LambdaV::apply(Appliable::Arg& args) {
+    auto new_env = Environment::extend(expr_.params_, args, env_);
+    Evaluator evaluator(new_env);
+    expr_.body_->accept(evaluator);
+    return evaluator.get_result();
 }
 
-Expr::Ptr Environment::find_value(const std::string &name) 
-{
-    auto iter = symtable.find(name);
-    if(iter == symtable.end()) {
-        if(outer_env != nullptr) 
-            return outer_env->find_value(name);
-        else
-            return nullptr;
+bool check_args_exact(const Appliable::Arg& args, size_t expect) {
+    if(args.size() != (size_t)expect) {
+        std::stringstream ss;
+        ss << "expect " <<  expect << " arguments, got " << args.size();
+        throw std::length_error(ss.str());
     }
-    return iter->second;
+    return true;
 }
 
-
-Expr::Ptr apply(Expr::Ptr func, List::Ptr args, Environment::Ptr env)
-{
-    static const std::map<std::string, Procedure::ProcType> primitives 
-    {{"if", eval_if}, {"lambda", eval_lambda}, 
-     {"quote", eval_quote}, {"define", eval_define},
-     {"and", eval_and}, {"or", eval_or}};
-
-    switch(func->type) {
-        case Expr::Type::Lambda:
-            {
-                auto lam = std::static_pointer_cast<Lambda>(func);
-                auto sub_body = lam->body;
-                auto new_env = lam->env->extended_env(lam->params,
-                                                      eval_arguments(args, env));
-                Expr::Ptr value;
-                while(List::can_iterate(sub_body)) {
-                   value = sub_body->expr->eval(new_env);
-                   sub_body = sub_body->next_list();
-                }
-                return value; 
-            }
-        case Expr::Type::Symbol:
-            {
-                auto sym = std::static_pointer_cast<Symbol>(func);
-                auto proc = primitives.find(sym->name);
-                if(proc != primitives.end()) {
-                    return proc->second(args, env);
-                }
-                else{
-                    auto proc = env->find_value(sym->name);
-                    if(proc != nullptr) 
-                        return apply(proc, args, env);
-                    else
-                        throw std::invalid_argument(sym->name+" not found!\n");
-                }
-            }
-            break;
-        case Expr::Type::Procedure:
-            return std::static_pointer_cast<Procedure>(func)->proc(args, env);
-        case Expr::Type::Number:
-            throw std::invalid_argument("Number is not appliable");
-            break;
-        case Expr::Type::List:
-            return apply(func->eval(env), args, env);
+bool check_args_at_least(const Appliable::Arg& args, size_t least) {
+    if(args.size() < least) {
+        std::stringstream ss;
+        ss << "expect at least " << least << " arguments, got " << args.size();
+        throw std::length_error(ss.str());
     }
-    return nullptr;
+    return true;
+}
+
+bool check_arg(const Value::Ptr& arg, Value::Type type) {
+    static const char* type_str[] = {"Number", "Symbol", "Appliable", "Cons", "Boolean"};
+    using Type = std::underlying_type_t<Value::Type>;
+    if(arg->type_ != type) {
+        throw std::invalid_argument("expect " + 
+                std::string(type_str[static_cast<Type>(type)]) + 
+                " but got " + type_str[static_cast<Type>(arg->type_)]);
+    }
+    return true;
 }
 
 std::vector<std::string> tokenize(const char *c)
@@ -175,135 +132,86 @@ std::vector<std::string> tokenize(const char *c)
     return tokens;
 }
 
+const std::string* add_symbol(const std::string& s) {
+    static std::unordered_set<std::string> string_intern;
+    auto pos = string_intern.insert(s).first;
+    return &*pos;
+}
+
 Expr::Ptr parse(std::vector<std::string>::iterator &start,
                 std::vector<std::string>::iterator &end)
 {
-    //for a symbol, if already defined, we return pointer,
-    //so compare symbol only compare their pointer,else
-    //we create new
-    static std::map<std::string, Symbol::Ptr> sym_pools
-    {{"#t",LISP_TRUE}, {"#f", LISP_FALSE},
-     {"quote", std::make_shared<Symbol>("quote")}};
 
     if(start != end) {
         const auto &str = *start;
         //numbers
-        if(std::isdigit(str[0]) || (str[0] == '-' && std::isdigit(str[1]))) 
-        { 
-            return std::make_shared<Number>(std::stol(*start++));
-        }
-        //list
-        else if(*start == "(") {
-            ++start;
-            auto lst = std::make_shared<List>();
-            auto iter = lst;
-            while(*start != ")") {
-                iter->expr = parse(start, end);
-                //list tail will contain an empty list whose expr is null
-                iter->next = std::make_shared<List>();
-                iter = iter->next_list();
-            }
-            ++start;
-            return lst; 
+        if(std::isdigit(str[0]) || (str[0] == '-' && std::isdigit(str[1]))) {
+            return std::make_unique<NumberE>(*start++);
         }
         //quote
         else if(*start == "'") {
             ++start;
-            auto quote_expr = parse(start, end);
-            return std::make_shared<List>(sym_pools["quote"],
-                   std::make_shared<List>(quote_expr,std::make_shared<List>()));
+            auto quote = parse(start, end);
+            return std::make_unique<Quote>(std::move(quote));
+        }
+        //list
+        else if(*start == "(") {
+            ++start;
+            if(*start == "define") {
+                ++start;
+                auto name = parse(start, end);
+                assert(name->type_ == Expr::Type::Symbol);
+                auto body = parse(start, end);
+                ++start;
+                return std::make_unique<Define>(
+                        std::unique_ptr<SymbolE>(static_cast<SymbolE*>(name.release())),
+                        std::move(body));
+            }else if(*start == "if") {
+                ++start;
+                auto pred = parse(start, end);
+                auto cons = parse(start, end);
+                auto alter = parse(start, end);
+                ++start;
+                return std::make_unique<If>(std::move(pred), std::move(cons), std::move(alter));
+            }else if(*start == "lambda") {
+                ++start;
+                assert(*start == "(");
+                ++start;
+
+                LambdaE::ParamsType params;
+                while(*start != ")") {
+                    auto param = parse(start, end);
+                    assert(param->type_ == Expr::Type::Symbol);
+                    params.emplace_back(std::unique_ptr<SymbolE>(static_cast<SymbolE*>(param.release())));
+                }
+                ++start; //skip ")"
+                auto body = parse(start, end);
+                ++start;
+                return std::make_unique<LambdaE>(std::move(params), std::move(body));
+            }else if(*start == ")") {
+                throw std::invalid_argument("empty application");
+            }else { //application
+                auto rator = parse(start, end);
+                Application::Operands rands;
+                while(*start != ")") {
+                    rands.emplace_back(parse(start, end));
+                }
+                ++start;
+                return std::make_unique<Application>(std::move(rator), std::move(rands));
+            }
         }
         //symbol
         else {
-            auto it = sym_pools.find(*start);
-            if(it != sym_pools.end()) {
-                ++start;
-                return it->second;
-            }
-            else { 
-                const auto& news = std::make_shared<Symbol>(*start);
-                sym_pools.insert({*start, news});
-                ++start;
-                return news;
-            }
+            return std::make_unique<SymbolE>(add_symbol(*start++));
         }
     }
     return nullptr; //no input so no expr
 }
 
-template<typename OpType>
-struct Arithmetic{
-    OpType op;
-    Expr::Ptr operator()(List::Ptr args, Environment::Ptr env)
-    {
-        auto arg_val = eval_arguments(args, env);
-        check_arguments(arg_val, Expr::Type::Number, "Arithmetic");
-        std::vector<long> nums;
-        while(List::can_iterate(arg_val)) {
-            nums.push_back(std::static_pointer_cast<Number>(arg_val->expr)->value);
-            arg_val = arg_val->next_list();
-        }
-        long ans = nums[0];
-        for(auto n = nums.begin()+1; n != nums.end(); ++n)
-            ans = op(ans, *n);
-        return std::make_shared<Number>(ans);
-    }
-};
-
-template<typename OpType>
-struct Comparator
-{
-    OpType op;
-    Expr::Ptr operator()(List::Ptr args, Environment::Ptr env) 
-    {
-        check_arguments(args, 2, "logical compare");
-        auto arg_val = eval_arguments(args, env);
-        check_arguments(arg_val, Expr::Type::Number, "logical compare");
-        auto e1 = arg_val->expr;
-        auto e2 = std::static_pointer_cast<List>(arg_val->next)->expr;
-        long v1 = std::static_pointer_cast<Number>(e1)->value;
-        long v2 = std::static_pointer_cast<Number>(e2)->value;
-        return op(v1, v2) ? LISP_TRUE: LISP_FALSE;
-    }
-
-};
-
-std::shared_ptr<Environment> init_global_env()
-{
-    static const std::map<std::string, Expr::Ptr>  
-    globals{
-    {"#t", LISP_TRUE},
-    {"#f", LISP_FALSE},
-    {"car", std::make_shared<Procedure>(eval_car)}, 
-    {"cdr", std::make_shared<Procedure>(eval_cdr)}, 
-    {"cons", std::make_shared<Procedure>(eval_cons)},
-    {"list", std::make_shared<Procedure>(eval_list)},
-    {"eq?", std::make_shared<Procedure>(eval_eqq)},
-    {"null?", std::make_shared<Procedure>(eval_nullq)},
-    {"pair?", std::make_shared<Procedure>(eval_pairq)},
-    {"number?", std::make_shared<Procedure>(eval_numberq)},
-    {"symbol?", std::make_shared<Procedure>(eval_symbolq)},
-    {"not", std::make_shared<Procedure>(eval_not)},
-    {"+", std::make_shared<Procedure>(Arithmetic<std::plus<long>>())}, 
-    {"-", std::make_shared<Procedure>(Arithmetic<std::minus<long>>())},
-    {"*", std::make_shared<Procedure>(Arithmetic<std::multiplies<long>>())}, 
-    {"/", std::make_shared<Procedure>(Arithmetic<std::divides<long>>())},
-    {"%", std::make_shared<Procedure>(Arithmetic<std::modulus<long>>())},
-    {"<", std::make_shared<Procedure>(Comparator<std::less<long>>())}, 
-    {">", std::make_shared<Procedure>(Comparator<std::greater_equal<long>>())},
-    {"=", std::make_shared<Procedure>(Comparator<std::equal_to<long>>())},
-    {">=", std::make_shared<Procedure>(Comparator<std::greater_equal<long>>())},
-    {"<=", std::make_shared<Procedure>(Comparator<std::less_equal<long>>())},
-    };
-
-    return std::make_shared<Environment>(globals);
-}
-
 //read-eval-print-loop
-void repl()
-{
-    auto user_initial_env = init_global_env();
+void repl(Evaluator &evaluator) {
     const std::string input_promt{"(toyLisp)~> "};
+    Printer printer;
     for(;;) {
         std::cout << input_promt;
         std::string line;
@@ -335,18 +243,41 @@ void repl()
 
         if(expr != nullptr) {
             try {
-                auto result = expr->eval(user_initial_env);
-                std::cout << "\n;value:\t" << result->to_string();
+                expr->accept(evaluator);
+                evaluator.get_result()->accept(printer);
             }
             catch(std::exception &e) {
                 std::cout << "\n" << e.what();
             }
         }
-        std::cout << "\n" << std::endl;
+        std::cout << printer.get_result() << "\n" << std::endl;
     }
+}
+
+Evaluator setup() {
+    auto initial_env = std::make_shared<Environment>();
+    //constant
+    initial_env->bind(add_symbol("#t"), std::make_shared<Boolean>(true));
+    initial_env->bind(add_symbol("#f"), std::make_shared<Boolean>(false));
+
+    //arithmetic functions
+    initial_env->bind(add_symbol("+"), std::make_shared<Procedure>(Arith<std::plus<NumberV::Type>>()));
+    initial_env->bind(add_symbol("-"), std::make_shared<Procedure>(Arith<std::minus<NumberV::Type>>()));
+    initial_env->bind(add_symbol("*"), std::make_shared<Procedure>(Arith<std::multiplies<NumberV::Type>>()));
+    initial_env->bind(add_symbol("/"), std::make_shared<Procedure>(Arith<std::divides<NumberV::Type>>()));
+
+    //loagical functions*
+    initial_env->bind(add_symbol("="), std::make_shared<Procedure>(Comparator<std::equal_to<NumberV::Type>>()));
+    initial_env->bind(add_symbol("<"), std::make_shared<Procedure>(Comparator<std::less<NumberV::Type>>()));
+    initial_env->bind(add_symbol("<="), std::make_shared<Procedure>(Comparator<std::less_equal<NumberV::Type>>()));
+    initial_env->bind(add_symbol(">"), std::make_shared<Procedure>(Comparator<std::greater<NumberV::Type>>()));
+    initial_env->bind(add_symbol(">="), std::make_shared<Procedure>(Comparator<std::greater_equal<NumberV::Type>>()));
+
+    return Evaluator{initial_env};
 }
 
 int main()
 {
-    repl();
+    Evaluator evaluator = setup();
+    repl(evaluator);
 }
