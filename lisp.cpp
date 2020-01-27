@@ -1,4 +1,5 @@
 #include "lisp.h"
+#include "builtins.hpp"
 #include <unordered_set>
 #include <memory>
 #include <cctype>
@@ -6,76 +7,108 @@
 #include <iostream>
 #include <sstream>
 
-void NumberE::accept(VisitorE& v) { v.forNumber(*this); }
-void SymbolE::accept(VisitorE& v) { v.forSymbol(*this); }
-void Quote::accept(VisitorE& v) { v.forQuote(*this); }
-void Define::accept(VisitorE& v) { v.forDefine(*this); }
-void If::accept(VisitorE& v) { v.forIf(*this); }
-void LambdaE::accept(VisitorE& v) { v.forLambda(*this); }
-void Application::accept(VisitorE& v) { v.forApplication(*this); }
+void NumberE::accept(VisitorE& v) const { v.forNumber(*this); }
+void SymbolE::accept(VisitorE& v) const { v.forSymbol(*this); }
+void Quote::accept(VisitorE& v) const { v.forQuote(*this); }
+void Define::accept(VisitorE& v) const { v.forDefine(*this); }
+void If::accept(VisitorE& v) const { v.forIf(*this); }
+void LambdaE::accept(VisitorE& v) const { v.forLambda(*this); }
+void Application::accept(VisitorE& v) const { v.forApplication(*this); }
 
-void NumberV::accept(VisitorV& v) { v.forNumber(*this); }
-void SymbolV::accept(VisitorV& v) { v.forSymbol(*this); }
-void LambdaV::accept(VisitorV& v) { v.forAppliable(*this); }
-void Procedure::accept(VisitorV& v) { v.forAppliable(*this); }
-void Cons::accept(VisitorV& v) { v.forCons(*this); }
-void Boolean::accept(VisitorV& v) { v.forBoolean(*this); }
+void NumberV::accept(VisitorV& v) const { v.forNumber(*this); }
+void SymbolV::accept(VisitorV& v) const { v.forSymbol(*this); }
+void LambdaV::accept(VisitorV& v) const { v.forAppliable(*this); }
+void Procedure::accept(VisitorV& v) const { v.forAppliable(*this); }
+void Cons::accept(VisitorV& v) const { v.forCons(*this); }
+void Boolean::accept(VisitorV& v) const { v.forBoolean(*this); }
 
-Environment::Ptr Environment::extend(const LambdaE::ParamsType& names, Appliable::Arg& values, const Environment::Ptr& old) {
+Environment::Ptr Environment::extend(const LambdaE::ParamsType& names, const Appliable::Arg& values, const Environment::Ptr& old) {
     auto new_env = std::make_shared<Environment>();
     new_env->outer_ = old;
     check_args_exact(values, names.size());
     for(size_t i = 0; i < names.size(); ++i)
-        new_env->bind(*names[i], values[i]);
+        new_env->bind(names[i], values[i]);
 
     return new_env;
 }
 
-void Evaluator::forSymbol(SymbolE& s) {
+void Evaluator::forSymbol(const SymbolE& s) {
     result_ = (*env_)(s);
     if(result_ == nullptr) {
-        throw std::invalid_argument{"unbounded variable: " + *s.ptr_};
+        throw std::invalid_argument{"unbounded variable: " + std::string(*s.ptr_)};
     }
 }
 
-void Evaluator::forDefine(Define &def) {
+void Evaluator::forDefine(const Define &def) {
     def.body_->accept(*this);
-    env_->bind(*def.name_, result_);
+    env_->bind(def.name_, result_);
 }
 
-void Evaluator::forIf(If &if_expr) {
+void Evaluator::forIf(const If &if_expr) {
     if_expr.pred_->accept(*this);
-    assert(result_->type_ == Value::Type::Boolean);
-    if(*std::static_pointer_cast<Boolean>(result_)) {
+    if(*std::dynamic_pointer_cast<Boolean>(result_)) {
         if_expr.conseq_->accept(*this);
     }else {
         if_expr.alter_->accept(*this);
     }
 }
 
-void Evaluator::forLambda(LambdaE &lambda) {
-    result_ = std::make_unique<LambdaV>(std::move(lambda), env_);
+void Evaluator::forLambda(const LambdaE &lambda) {
+    auto lambda_cp = static_cast<LambdaE*>(Cloner::clone(lambda).release());
+    result_ = std::make_shared<LambdaV>(std::unique_ptr<LambdaE>(lambda_cp), env_);
 }
 
-void Evaluator::forApplication(Application &app) {
+void Evaluator::forApplication(const Application &app) {
     app.operator_->accept(*this);
-    auto rator = std::dynamic_pointer_cast<Appliable>(result_);
-    assert(rator != nullptr);
-    
+
+    const auto& rator = ValueChecker<Appliable>::get_ref(*result_);
     std::vector<Value::Ptr> rands;
     for(auto &rand: app.operands_) {
         rand->accept(*this);
         rands.emplace_back(result_);
     }
-    result_ = rator->apply(rands);
+    result_ = rator.apply(rands);
 }
 
-Value::Ptr LambdaV::apply(Appliable::Arg& args) {
-    auto new_env = Environment::extend(expr_.params_, args, env_);
-    Evaluator evaluator(new_env);
-    expr_.body_->accept(evaluator);
-    return evaluator.get_result();
+Value::Ptr LambdaV::apply(const Appliable::Arg& args) const {
+    auto new_env = Environment::extend(expr_->params_, args, env_);
+    return Evaluator::eval(expr_->body_, new_env);
 }
+
+
+void Cloner::forDefine(const Define& def) {
+    def.body_->accept(*this); //copy body
+    auto body_cp = std::move(copy_);
+    copy_ = std::make_unique<Define>(def.name_, std::move(body_cp));
+}
+
+void Cloner::forIf(const If& ifexp) {
+    ifexp.pred_->accept(*this);
+    auto pred_cp = std::move(copy_);
+    ifexp.conseq_->accept(*this);
+    auto conseq_cp = std::move(copy_);
+    ifexp.alter_->accept(*this);
+    auto alter_cp = std::move(copy_);
+    copy_ = std::make_unique<If>(std::move(pred_cp), std::move(conseq_cp), std::move(alter_cp));
+}
+
+void Cloner::forLambda(const LambdaE& lambda) {
+    lambda.body_->accept(*this);
+    copy_ = std::make_unique<LambdaE>(lambda.params_, std::move(copy_));
+}
+
+void Cloner::forApplication(const Application& app) {
+    app.operator_->accept(*this);
+    auto rator = std::move(copy_);
+
+    Application::Operands rands;
+    for(const auto& rand: app.operands_) {
+        rand->accept(*this);
+        rands.emplace_back(std::move(copy_));
+    }
+    copy_ = std::make_unique<Application>(std::move(rator), std::move(rands));
+}
+
 
 bool check_args_exact(const Appliable::Arg& args, size_t expect) {
     if(args.size() != (size_t)expect) {
@@ -160,12 +193,9 @@ Expr::Ptr parse(std::vector<std::string>::iterator &start,
             if(*start == "define") {
                 ++start;
                 auto name = parse(start, end);
-                assert(name->type_ == Expr::Type::Symbol);
                 auto body = parse(start, end);
                 ++start;
-                return std::make_unique<Define>(
-                        std::unique_ptr<SymbolE>(static_cast<SymbolE*>(name.release())),
-                        std::move(body));
+                return std::make_unique<Define>(*dynamic_cast<SymbolE*>(name.get()), std::move(body));
             }else if(*start == "if") {
                 ++start;
                 auto pred = parse(start, end);
@@ -181,8 +211,7 @@ Expr::Ptr parse(std::vector<std::string>::iterator &start,
                 LambdaE::ParamsType params;
                 while(*start != ")") {
                     auto param = parse(start, end);
-                    assert(param->type_ == Expr::Type::Symbol);
-                    params.emplace_back(std::unique_ptr<SymbolE>(static_cast<SymbolE*>(param.release())));
+                    params.emplace_back(*dynamic_cast<SymbolE*>(param.get()));
                 }
                 ++start; //skip ")"
                 auto body = parse(start, end);
@@ -209,9 +238,8 @@ Expr::Ptr parse(std::vector<std::string>::iterator &start,
 }
 
 //read-eval-print-loop
-void repl(Evaluator &evaluator) {
+void repl(const Environment::Ptr env) {
     const std::string input_promt{"(toyLisp)~> "};
-    Printer printer;
     for(;;) {
         std::cout << input_promt;
         std::string line;
@@ -233,7 +261,7 @@ void repl(Evaluator &evaluator) {
         }while(n_left_paren > 0);
 
         if(n_left_paren != 0) {
-            std::cout << "parentheses not mathced!\n";
+            std::cout << "parentheses mismathc!\n";
             continue;
         }
 
@@ -241,25 +269,27 @@ void repl(Evaluator &evaluator) {
         auto start = tokens.begin(), end = tokens.end();
         auto expr =  parse(start, end);
 
+        Value::Ptr ans;
         if(expr != nullptr) {
             try {
-                expr->accept(evaluator);
-                evaluator.get_result()->accept(printer);
+                ans = Evaluator::eval(expr, env);
+                std::cout << Stringfier::to_string(*ans) << "\n" << std::endl;
             }
             catch(std::exception &e) {
                 std::cout << "\n" << e.what();
             }
         }
-        std::cout << printer.get_result() << "\n" << std::endl;
     }
 }
 
-Evaluator setup() {
+Environment::Ptr setup_env() {
     auto initial_env = std::make_shared<Environment>();
     //constant
     initial_env->bind(add_symbol("#t"), std::make_shared<Boolean>(true));
     initial_env->bind(add_symbol("#f"), std::make_shared<Boolean>(false));
 
+    using builtin::Arith;
+    using builtin::Comparator;
     //arithmetic functions
     initial_env->bind(add_symbol("+"), std::make_shared<Procedure>(Arith<std::plus<NumberV::Type>>()));
     initial_env->bind(add_symbol("-"), std::make_shared<Procedure>(Arith<std::minus<NumberV::Type>>()));
@@ -273,11 +303,10 @@ Evaluator setup() {
     initial_env->bind(add_symbol(">"), std::make_shared<Procedure>(Comparator<std::greater<NumberV::Type>>()));
     initial_env->bind(add_symbol(">="), std::make_shared<Procedure>(Comparator<std::greater_equal<NumberV::Type>>()));
 
-    return Evaluator{initial_env};
+    return initial_env;
 }
 
 int main()
 {
-    Evaluator evaluator = setup();
-    repl(evaluator);
+    repl(setup_env());
 }
