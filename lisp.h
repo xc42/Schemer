@@ -4,8 +4,9 @@
 #include <map>
 #include <functional>
 #include <memory>
+#include <optional>
 
-class VisitorE; //forward declaration for base visitor
+class VisitorE; //forward declaration of base visitor
 
 //Expr = NumberE| SymbolE| Quote| Define| If| Lambda| Application
 struct Expr {
@@ -20,7 +21,7 @@ struct Expr {
 
 struct NumberE: Expr{
     using Type = long long;
-    NumberE(const std::string& s): Expr(Expr::Type::Number), value_(std::stoll(s)){};
+    NumberE(Type v): Expr(Expr::Type::Number), value_(v){};
     void accept(VisitorE &v) const override;
 
     Type value_;
@@ -32,15 +33,6 @@ struct SymbolE: Expr{
     bool operator<(const SymbolE& s) const { return ptr_ < s.ptr_; }
     const std::string *ptr_;    
 };
-
-
-struct Quote: Expr{
-    Quote(Expr::Ptr &&e):Expr(Expr::Type::Quote), expr_(std::move(e)){}
-    void accept(VisitorE &v) const override;
-
-    Expr::Ptr expr_;
-};
-
 
 struct Define: Expr {
     Define(const SymbolE& n, Expr::Ptr &&b):
@@ -95,6 +87,13 @@ struct Value {
     virtual ~Value()=default;
 };
 
+struct Quote: Expr{
+    Quote(const Value::Ptr& v):Expr(Expr::Type::Quote), data_(v){}
+    void accept(VisitorE &v) const override;
+
+    Value::Ptr data_;
+};
+
 struct NumberV: public Value {
     using Type = long long;
     NumberV(Type v):Value(Value::Type::Number), value_(v){};
@@ -147,7 +146,7 @@ private:
 };
 
 struct Cons: public Value {
-    Cons(const Value::Ptr& car, const Value::Ptr& cdr):
+    Cons(const Value::Ptr& car=nullptr, const Value::Ptr& cdr=nullptr):
         Value(Value::Type::Cons), car_(car), cdr_(cdr) {}
 
     void accept(VisitorV &v) const override;
@@ -180,12 +179,12 @@ class Environment {
 public:
     using Ptr = std::shared_ptr<Environment>;
 
-    void bind(const SymbolE& name, const Value::Ptr& val) { bindings_[name] = val; }
+    void bind(const SymbolE& name, const Value::Ptr& val);
     static Ptr extend(const LambdaE::ParamsType&, const Appliable::Arg&, const Ptr& old);
 
-    Value::Ptr operator()(const SymbolE& s) { 
+    std::optional<Value::Ptr> operator()(const SymbolE& s) { 
         auto it = bindings_.find(s);
-        return it != bindings_.end()? it->second: (outer_? (*outer_)(s): nullptr);
+        return it != bindings_.end()? it->second: (outer_? (*outer_)(s): std::nullopt);
     }
 
 private:
@@ -220,19 +219,13 @@ class Evaluator: public VisitorE {
 public:
     Evaluator():env_(std::make_shared<Environment>()){}
     Evaluator(const Environment::Ptr& env): env_(env){}
-
-    static const Value::Ptr& eval(const Expr::Ptr& expr, const Environment::Ptr& env) {
-        static Evaluator evaluator;
-        evaluator.env_ = env;
-        expr->accept(evaluator);
-        return evaluator.result_;
-    }
+    Value::Ptr get_result() { return std::move(result_); }
 
     ~Evaluator()=default;
 private:
     void forNumber(const NumberE& num) override { result_ = std::make_unique<NumberV>(num.value_); }
     void forSymbol(const SymbolE& s) override;
-    void forQuote(const Quote& ) override{ }//TODO 
+    void forQuote(const Quote& quo) override{ result_ = quo.data_; }
     void forDefine(const Define& def) override;
     void forIf(const If&) override;
     void forLambda(const LambdaE &) override;
@@ -255,7 +248,7 @@ public:
 private:
     void forNumber(const NumberE& num) override { copy_ = std::make_unique<NumberE>(num); }
     void forSymbol(const SymbolE& s) override { copy_ = std::make_unique<SymbolE>(s); }
-    void forQuote(const Quote& ) override{ }//TODO
+    void forQuote(const Quote& quo) override{ copy_ = std::make_unique<Quote>(quo); }
     void forDefine(const Define& def) override;
     void forIf(const If&) override;
     void forLambda(const LambdaE &) override;
@@ -266,38 +259,34 @@ private:
 
 class Stringfier: public VisitorV{
 public:
-    static const std::string& to_string(const Value& val) {
+    static std::string&& to_string(const Value& val) {
         static Stringfier printer;
         val.accept(printer);
-        return printer.str;
+        return std::move(printer.str_);
     }
 
     ~Stringfier()=default;
 private:
-    void forNumber(const NumberV& num) override { str = std::to_string(num.value_); }
-    void forSymbol(const SymbolV& s) override { str = *s.ptr_; }
+    void forNumber(const NumberV& num) override { str_ = std::to_string(num.value_); }
+    void forSymbol(const SymbolV& s) override { str_ = *s.ptr_; }
     void forAppliable(const Appliable& app) override{ 
-        str = app.func_type_ == Appliable::Type::Lambda? "#<lambda>": "#<buildin-procedure>";
+        str_ = app.func_type_ == Appliable::Type::Lambda? "#<lambda>": "#<buildin-procedure>";
     }
-    void forBoolean(const Boolean& b) override { str = b.value_? "#t": "#f"; }
-    void forCons(const Cons&) override{};
+    void forBoolean(const Boolean& b) override { str_ = b.value_? "#t": "#f"; }
+    void forCons(const Cons&) override;
 
-    std::string str;
+    std::string str_;
 };
-
-const std::string* make_symbol(const std::string&);
-bool check_args_exact(const Appliable::Arg&, size_t);
-bool check_args_at_least(const Appliable::Arg&, size_t);
 
 
 template<typename Expect>
 class ValueChecker: public VisitorV {
 public:
 
-    static const Expect& get_ref(const Value& val) { 
+    static const Expect* get_ptr(const Value& val) { 
         static ValueChecker<Expect> checker;
         val.accept(checker);
-        return *checker.result_; 
+        return checker.result_; 
     }
 private:
     void forNumber(const NumberV& v) override { check(v); }
@@ -312,9 +301,53 @@ private:
             result_ = &t;
         } else {
             throw std::invalid_argument(
-                    std::string("expect ") + type_string<Expect>() + " got " + type_string<Boolean>());
+                    std::string("expect ") + type_string<Expect>() + " got " + type_string<Type>());
         }
     }
     const Expect *result_;
 };
 
+class ValueEq: public VisitorV {
+public:
+    ValueEq(const Value* p):lhs_(p) {}
+    static bool eq(const Value *lhs, const Value *rhs) {
+        ValueEq comp(lhs);
+        rhs->accept(comp);
+        return comp.eq_;
+    }
+
+private:
+    void forNumber(const NumberV& v) override { eq(v); }
+    void forSymbol(const SymbolV& v) override  { eq(v); }
+    void forAppliable(const Appliable& v) override { eq(v); }
+    void forCons(const Cons& v) override { eq(v); }
+    void forBoolean(const Boolean& v) override { eq(v); }
+    
+    template<typename RType>
+    void eq(const RType& rhs) {
+        if(lhs_ == &rhs) { 
+            eq_ = true; 
+        }else if(lhs_->type_ == rhs.type_){
+            if constexpr(std::is_same_v<RType, NumberV>) {
+                eq_ = static_cast<const NumberV*>(lhs_)->value_ == rhs.value_;
+            }else if constexpr(std::is_same_v<RType, SymbolV>) {
+                eq_ = static_cast<const SymbolV*>(lhs_)->ptr_ == rhs.ptr_;
+            }else {
+                eq_ = false;
+            }
+        }else {
+            eq_ = false;
+        }
+    }
+    const Value* lhs_;
+    bool eq_;
+};
+
+
+std::vector<std::string> tokenize(const char *);
+Expr::Ptr parse(std::vector<std::string>::iterator&, std::vector<std::string>::iterator&);
+Value::Ptr parse_data(std::vector<std::string>::iterator&, std::vector<std::string>::iterator&);
+
+const std::string* make_symbol(const std::string&);
+bool check_args_exact(const Appliable::Arg&, size_t);
+bool check_args_at_least(const Appliable::Arg&, size_t);

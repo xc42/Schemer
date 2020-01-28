@@ -22,6 +22,13 @@ void Procedure::accept(VisitorV& v) const { v.forAppliable(*this); }
 void Cons::accept(VisitorV& v) const { v.forCons(*this); }
 void Boolean::accept(VisitorV& v) const { v.forBoolean(*this); }
 
+void Environment::bind(const SymbolE& name, const Value::Ptr& val) { 
+    bindings_[name] = val; 
+    //debug:
+    //std::cout << "binded variable " <<  "`" << *name.ptr_ << "`" <<
+    //    (val==nullptr?"":" with value " + Stringfier::to_string(*val)) <<  " in env " << this << '\n';
+}
+
 Environment::Ptr Environment::extend(const LambdaE::ParamsType& names, const Appliable::Arg& values, const Environment::Ptr& old) {
     auto new_env = std::make_shared<Environment>();
     new_env->outer_ = old;
@@ -33,9 +40,11 @@ Environment::Ptr Environment::extend(const LambdaE::ParamsType& names, const App
 }
 
 void Evaluator::forSymbol(const SymbolE& s) {
-    result_ = (*env_)(s);
-    if(result_ == nullptr) {
-        throw std::invalid_argument{"unbounded variable: " + std::string(*s.ptr_)};
+    auto val = (*env_)(s);
+    if(val.has_value()) {
+        result_ = val.value();
+    }else {
+        throw std::invalid_argument{"#fatal: unbound variable: " + std::string(*s.ptr_)};
     }
 }
 
@@ -60,19 +69,22 @@ void Evaluator::forLambda(const LambdaE &lambda) {
 
 void Evaluator::forApplication(const Application &app) {
     app.operator_->accept(*this);
+    auto rator = std::move(result_);
 
-    const auto& rator = ValueChecker<Appliable>::get_ref(*result_);
     std::vector<Value::Ptr> rands;
     for(auto &rand: app.operands_) {
         rand->accept(*this);
         rands.emplace_back(result_);
     }
-    result_ = rator.apply(rands);
+    result_ = ValueChecker<Appliable>::get_ptr(*rator)->apply(rands);
 }
 
 Value::Ptr LambdaV::apply(const Appliable::Arg& args) const {
     auto new_env = Environment::extend(expr_->params_, args, env_);
-    return Evaluator::eval(expr_->body_, new_env);
+    Evaluator eval{new_env};
+    //return Evaluator::eval(expr_->body_, new_env);
+    expr_->body_->accept(eval);
+    return eval.get_result();
 }
 
 
@@ -109,6 +121,33 @@ void Cloner::forApplication(const Application& app) {
     copy_ = std::make_unique<Application>(std::move(rator), std::move(rands));
 }
 
+void Stringfier::forCons(const Cons& cc) {
+    std::string res ;
+    res += "(";
+    const Cons* it = &cc;
+    while(it) {
+        if(it->car_) {
+            it->car_->accept(*this);
+            res += str_;
+        }else {
+            res += "()";
+        }
+
+        if(!it->cdr_) break; //no second element
+
+        res += " ";
+        if(it->cdr_->type_ == Value::Type::Cons) {
+            it = static_cast<Cons*>(it->cdr_.get());
+        }else {
+            res += ". ";
+            it->cdr_->accept(*this);
+            res += str_;
+            break;
+        }
+    }
+    res += ")";
+    str_ = std::move(res);
+}
 
 bool check_args_exact(const Appliable::Arg& args, size_t expect) {
     if(args.size() != (size_t)expect) {
@@ -174,72 +213,98 @@ const std::string* add_symbol(const std::string& s) {
 Expr::Ptr parse(std::vector<std::string>::iterator &start,
                 std::vector<std::string>::iterator &end)
 {
+    if(start == end)  return nullptr;
 
-    if(start != end) {
-        const auto &str = *start;
-        //numbers
-        if(std::isdigit(str[0]) || (str[0] == '-' && std::isdigit(str[1]))) {
-            return std::make_unique<NumberE>(*start++);
-        }
-        //quote
-        else if(*start == "'") {
+    const auto &str = *start;
+    //numbers
+    if(std::isdigit(str[0]) || (str[0] == '-' && std::isdigit(str[1]))) {
+        return std::make_unique<NumberE>(std::stoll(*start++)); //
+    }
+    //quote
+    else if(*start == "'") {
+        ++start;
+        auto quote = parse_data(start, end);
+        return std::make_unique<Quote>(std::move(quote));
+    }
+    //list
+    else if(*start == "(") {
+        ++start;
+        if(*start == "define") {
             ++start;
-            auto quote = parse(start, end);
-            return std::make_unique<Quote>(std::move(quote));
-        }
-        //list
-        else if(*start == "(") {
+            auto name = parse(start, end);
+            auto body = parse(start, end);
             ++start;
-            if(*start == "define") {
-                ++start;
-                auto name = parse(start, end);
-                auto body = parse(start, end);
-                ++start;
-                return std::make_unique<Define>(*dynamic_cast<SymbolE*>(name.get()), std::move(body));
-            }else if(*start == "if") {
-                ++start;
-                auto pred = parse(start, end);
-                auto cons = parse(start, end);
-                auto alter = parse(start, end);
-                ++start;
-                return std::make_unique<If>(std::move(pred), std::move(cons), std::move(alter));
-            }else if(*start == "lambda") {
-                ++start;
-                assert(*start == "(");
-                ++start;
+            return std::make_unique<Define>(*dynamic_cast<SymbolE*>(name.get()), std::move(body));
+        }else if(*start == "if") {
+            ++start;
+            auto pred = parse(start, end);
+            auto cons = parse(start, end);
+            auto alter = parse(start, end);
+            ++start;
+            return std::make_unique<If>(std::move(pred), std::move(cons), std::move(alter));
+        }else if(*start == "lambda") {
+            ++start;
+            assert(*start == "(");
+            ++start;
 
-                LambdaE::ParamsType params;
-                while(*start != ")") {
-                    auto param = parse(start, end);
-                    params.emplace_back(*dynamic_cast<SymbolE*>(param.get()));
-                }
-                ++start; //skip ")"
-                auto body = parse(start, end);
-                ++start;
-                return std::make_unique<LambdaE>(std::move(params), std::move(body));
-            }else if(*start == ")") {
-                throw std::invalid_argument("empty application");
-            }else { //application
-                auto rator = parse(start, end);
-                Application::Operands rands;
-                while(*start != ")") {
-                    rands.emplace_back(parse(start, end));
-                }
-                ++start;
-                return std::make_unique<Application>(std::move(rator), std::move(rands));
+            LambdaE::ParamsType params;
+            while(*start != ")") {
+                auto param = parse(start, end);
+                params.emplace_back(*dynamic_cast<SymbolE*>(param.get()));
             }
-        }
-        //symbol
-        else {
-            return std::make_unique<SymbolE>(add_symbol(*start++));
+            ++start; //skip ")"
+            auto body = parse(start, end);
+            ++start;
+            return std::make_unique<LambdaE>(std::move(params), std::move(body));
+        }else if(*start == ")") {
+            throw std::invalid_argument("empty application");
+        }else { //application
+            auto rator = parse(start, end);
+            Application::Operands rands;
+            while(*start != ")") {
+                rands.emplace_back(parse(start, end));
+            }
+            ++start;
+            return std::make_unique<Application>(std::move(rator), std::move(rands));
         }
     }
-    return nullptr; //no input so no expr
+    //symbol
+    else {
+        return std::make_unique<SymbolE>(add_symbol(*start++));
+    }
+}
+
+//parse the program text as data
+Value::Ptr parse_data(std::vector<std::string>::iterator &start,
+                std::vector<std::string>::iterator &end) 
+{
+    if(start == end)  return nullptr;
+
+    const auto& str = *start;
+    if(std::isdigit(str[0]) || (str[0] == '-' && std::isdigit(str[1]))) {
+        return std::make_shared<NumberV>(std::stoll(*start++)); //
+    }
+    else if(*start == "(") {
+        ++start;
+        Cons head;
+        Value* it = &head;
+        while(*start != ")") {
+            auto new_cell = std::make_shared<Cons>(parse_data(start, end));
+            static_cast<Cons*>(it)->cdr_ = new_cell;
+            it = new_cell.get();
+        }
+        ++start;
+        return head.cdr_;
+    }
+    else {
+        return std::make_shared<SymbolV>(add_symbol(*start++));
+    }
 }
 
 //read-eval-print-loop
 void repl(const Environment::Ptr env) {
     const std::string input_promt{"(toyLisp)~> "};
+    Evaluator eval{env};
     for(;;) {
         std::cout << input_promt;
         std::string line;
@@ -261,22 +326,26 @@ void repl(const Environment::Ptr env) {
         }while(n_left_paren > 0);
 
         if(n_left_paren != 0) {
-            std::cout << "parentheses mismathc!\n";
+            std::cout << "parentheses mismatch!\n";
             continue;
         }
 
-        auto tokens = tokenize(line.c_str());
-        auto start = tokens.begin(), end = tokens.end();
-        auto expr =  parse(start, end);
+        Expr::Ptr expr;
+        try { //parse
+            auto tokens = tokenize(line.c_str());
+            auto start = tokens.begin(), end = tokens.end();
+            expr =  parse(start, end);
+        }catch(std::exception& e) {
+            std::cout << e.what() << '\n';
+        }
 
-        Value::Ptr ans;
         if(expr != nullptr) {
-            try {
-                ans = Evaluator::eval(expr, env);
-                std::cout << Stringfier::to_string(*ans) << "\n" << std::endl;
+            try { //eval
+                expr->accept(eval);
+                std::cout << Stringfier::to_string(*eval.get_result()) << "\n" << std::endl;
             }
             catch(std::exception &e) {
-                std::cout << "\n" << e.what();
+                std::cout << e.what() << "\n" ;
             }
         }
     }
@@ -288,8 +357,7 @@ Environment::Ptr setup_env() {
     initial_env->bind(add_symbol("#t"), std::make_shared<Boolean>(true));
     initial_env->bind(add_symbol("#f"), std::make_shared<Boolean>(false));
 
-    using builtin::Arith;
-    using builtin::Comparator;
+    using namespace builtin;
     //arithmetic functions
     initial_env->bind(add_symbol("+"), std::make_shared<Procedure>(Arith<std::plus<NumberV::Type>>()));
     initial_env->bind(add_symbol("-"), std::make_shared<Procedure>(Arith<std::minus<NumberV::Type>>()));
@@ -302,6 +370,12 @@ Environment::Ptr setup_env() {
     initial_env->bind(add_symbol("<="), std::make_shared<Procedure>(Comparator<std::less_equal<NumberV::Type>>()));
     initial_env->bind(add_symbol(">"), std::make_shared<Procedure>(Comparator<std::greater<NumberV::Type>>()));
     initial_env->bind(add_symbol(">="), std::make_shared<Procedure>(Comparator<std::greater_equal<NumberV::Type>>()));
+
+    initial_env->bind(add_symbol("cons"), std::make_shared<Procedure>(cons));
+    initial_env->bind(add_symbol("car"), std::make_shared<Procedure>(car));
+    initial_env->bind(add_symbol("cdr"), std::make_shared<Procedure>(cdr));
+    initial_env->bind(add_symbol("null?"), std::make_shared<Procedure>(nullq));
+    initial_env->bind(add_symbol("eq?"), std::make_shared<Procedure>(eqq));
 
     return initial_env;
 }
