@@ -33,27 +33,22 @@ void repl(const Environment::Ptr env) {
             continue;
         }
 
-        Expr::Ptr expr;
-        try { //parse
-            auto tokens = tokenize(line.c_str());
-            auto start = tokens.begin(), end = tokens.end();
-            expr =  parse(start, end);
-        }catch(ParseException& e) { 
-            std::cout << e.what() << '\n';
-		}catch(std::exception& e) {
-            std::cout << e.what() << '\n';
-        }
+		Parser::Result<Expr::Ptr> res;
+		auto tokens = Parser::tokenize(line.c_str());
+		res =  Parser::parse(Parser::Range(tokens.begin(),tokens.end()));
 
-        if(expr != nullptr) {
+        if(res) {
             try { //eval
-                expr->accept(eval);
+                res.value_->accept(eval);
 				eval.getResult()->accept(printer);
 				cout << endl;
             }
             catch(std::exception &e) {
                 std::cout << e.what() << "\n" ;
             }
-        }
+        }else {
+			std::cerr << "ParseError: " <<  res.err_ << std::endl;
+		}
     }
 }
 

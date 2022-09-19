@@ -35,6 +35,7 @@ struct BooleanE: Expr {
 };
 
 struct Var: Expr{
+	Var():Expr(Expr::Type::Var) {}
     Var(std::string s):Expr(Expr::Type::Var),v_(std::move(s)){}
     void accept(VisitorE &v) const override;
 
@@ -73,8 +74,10 @@ struct Let: Expr {
 
 struct Lambda: Expr{
 	using ParamsType = std::vector<Var>;
-    Lambda(const ParamsType& params, Expr::Ptr&& b):
-        Expr(Expr::Type::Lambda), params_(std::make_shared<ParamsType>(params)), body_(std::move(b)){}
+	Lambda(ParamsType::const_iterator b, ParamsType::const_iterator e, Expr::Ptr&& body):
+        Expr(Expr::Type::Lambda), params_(std::make_shared<ParamsType>(b, e)), body_(std::move(body)){}
+
+    Lambda(const ParamsType& params, Expr::Ptr&& b):Lambda(params.begin(), params.end(), std::move(b)) {}
 
 	auto arity() const { return params_->size(); }
 

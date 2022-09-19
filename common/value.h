@@ -91,11 +91,17 @@ struct Cons: public Value {
     Value::Ptr car_, cdr_;
 };
 
-struct Nil: public Value {
+class Nil: public Value {
+public:
+	static auto& getInstance() {
+		static std::shared_ptr<Nil> nil(new Nil);
+		return nil;
+	}
+    ~Nil()=default;
+private:
 	Nil():Value(Value::Type::Nil) {}
 
     void accept(VisitorV &v) const override;
-    ~Nil()=default;
 };
 
 struct Void: public Value

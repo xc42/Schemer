@@ -1,6 +1,7 @@
 #include "parser.h"
 #include "value.h"
 
+namespace Parser {
 using namespace std;
 
 std::vector<std::string> tokenize(const char *c)
@@ -31,218 +32,142 @@ std::vector<std::string> tokenize(const char *c)
 	return tokens;
 }
 
-Expr::Ptr parse(std::vector<std::string>::iterator &start,
-                std::vector<std::string>::iterator &end)
-{
-    if(start == end)  return nullptr;
 
-    const auto &str = *start;
-    //numbers
-    if(std::isdigit(str[0]) || (str[0] == '-' && std::isdigit(str[1]))) {
-		return parseNumber(start, end);
-    }
+Result<Expr::Ptr> parse(const Range& rg)
+{
+	if(rg.eof()) return {};
+
+	const auto &peek = rg.cur();
+	//numbers
+	if(std::isdigit(peek[0]) || (peek[0] == '-' && std::isdigit(peek[1]))) {
+		return parseNumber(rg);
+	}
 	//bool literal
-	if(str == "#t") {
-		return make_unique<BooleanE>(true);
-		++start;
+	if(peek == "#t") {
+		return Result<unique_ptr<BooleanE>>{make_unique<BooleanE>(true), rg+1};
 	}
-	else if( str == "#f") {
-		return make_unique<BooleanE>(false);
-		++start;
+	else if( peek == "#f") {
+		return Result<unique_ptr<BooleanE>>{make_unique<BooleanE>(false), rg+1};
 	}
-    //quote
-    else if(*start == "'") {
-        ++start;
-		return parseQuote(start, end);
-    }
-    //sexp
-    else if(*start == "(") {
-		if(start + 1 == end) throw ParseException("unclosed left paren");
-
-		const auto& next = *(start+1);
-        if(next == "define") {
-			return parseDef(start, end);
-        }else if(next == "if") {
-			return parseIf(start, end);
-        }else if(next == "lambda") {
-			return parseLambda(start, end);
-		}else if(next == "let") {
-			return parseLet(start ,end);
-        }else { //application
-			return parseApply(start, end);
-        }
-    }
-    //identifier or var
+	else if(peek == "'") {
+		return parseQuote(rg);
+	}
+	else if(peek == "(") {
+		static auto sexp = Or<Expr::Ptr>::OneOf(parseDef, parseLet, parseLambda, parseIf, parseApply);
+		return sexp(rg);
+	}
 	else {
-		return parseVar(start, end);
+		return parseVar(rg);
 	}
 }
 
-std::unique_ptr<Var> parseVar(Iter &start, Iter &end) {
-	if(start == end)
-		throw ParseException("expect a token as var");
-
-	return std::make_unique<Var>(*start++); 
-}
-
-std::unique_ptr<Define>  parseDef(Iter &start, Iter &end)
+Result<std::unique_ptr<NumberE>> parseNumber(const Range& rg)
 {
-	start += 2;
-	unique_ptr<Define> def;
-	if(*start == "(") {
-		++start;
-		auto head = parseVar(start, end);
-		vector<Var> rest;
-		while(start != end && *start != ")") {
-			auto v = parseVar(start, end);
-			rest.emplace_back(std::move(*v));
-		}
-		def = make_unique<Define>(std::move(*head), make_unique<Lambda>(rest, parse(start, end)));
-	}else {
-		auto head = parseVar(start, end);
-		def = make_unique<Define>(std::move(*head), parse(start,end));
+	if(rg.eof()) return {};
+	try {
+		size_t pos;
+		auto val = make_unique<NumberE>(std::stoll(rg.cur(), &pos));
+		if(pos == rg.cur().size())
+			return {std::move(val), rg+1};
+		else 
+			return {"not a valid number"};
+	}catch(exception& ex) {
+		return {"not a valid number"};
 	}
-	
-	if(start == end || *start != ")")
-		throw ParseException("unclosed left paren in define");
-	++start;
-	return def;
 }
 
-std::unique_ptr<If> parseIf(Iter &start, Iter &end)
+Result<std::unique_ptr<Var>> parseVar(const Range& rg)
 {
-	start += 2;
-	auto pred = parse(start, end);
-	auto cons = parse(start, end);
-	auto alter = parse(start, end);
-	if(start == end || *start != ")")
-		throw ParseException("unclosed left paren in if");
+	if(rg.eof()) return {};
 
-	++start;
-	return std::make_unique<If>(std::move(pred), std::move(cons), std::move(alter));
+	return {make_unique<Var>(rg.cur()), rg+1};
 }
 
-std::unique_ptr<Lambda>  parseLambda(Iter &start, Iter &end)
+Result<std::unique_ptr<Quote>> parseQuote(const Range& rg)
 {
-	start += 2;
-
-	if(start == end || *start != "(")
-		throw ParseException("expect param list in lambda");
-
-	++start;
-	Lambda::ParamsType params;
-	while(start != end && *start != ")") {
-		auto v = parseVar(start, end);
-		params.emplace_back(std::move(*v));
-	}
-
-	if(start == end)
-		throw ParseException("unclosed left paren of lambda param list");
-
-	++start; //skip ")"
-	auto body = parse(start, end);
-
-	if(start == end)
-		throw ParseException("unclosed left paren of lambda expression");
-	++start;
-	return std::make_unique<Lambda>(std::move(params), std::move(body));
+	return {};
 }
 
-std::unique_ptr<Let>  parseLet(Iter &start, Iter &end)
+Result<std::unique_ptr<Define>>  parseDef(const Range& rg)
 {
-	start += 2;
-	
-	static auto parseBind = [](Iter &start, Iter &end)
-	{
-		if(start != end && *start == "(") ++start;
-		else throw ParseException("expect left paren in `let` binding");
+	//auto def1 = And(rg, Lit("fuck"), Lit("define"));
+	static auto lp = Lit("("), rp = Lit(")"), defKw = Lit("define");
+	static auto def1 = And(lp, defKw, parseVar, parse, rp) >> 
+		[](unique_ptr<Var>&& v, Expr::Ptr&& body) 
+		{ 
+			return make_unique<Define>(std::move(*v), std::move(body)); 
+		};
 
-		auto v = parseVar(start, end);
-		auto e = parse(start, end);
-		if(start == end || *start != ")") 
-			throw ParseException("unclosed right paren in `let` binding");
-		++start;
-		return make_pair(std::move(*v), std::move(e));
-	};
-
-	if(start == end || *start != "(")
-		throw ParseException("expect bingding list in `let`");
-
-	++start;
-	Let::Binding binds;
-	while(start != end && *start != ")") {
-		binds.emplace_back(parseBind(start, end));
-	}
-	if(start == end)
-		throw ParseException("unclosed left paren in `let` binding");
-
-	++start;
-	auto let = make_unique<Let>(std::move(binds), parse(start, end));
-	if(start == end || *start != ")")
-		throw ParseException("unclosed left paren in `let`");
-	++start;
-	return let;
+	static auto def2 = And(lp, defKw, lp, Many(parseVar), rp, parse, rp) >>
+		[](vector<unique_ptr<Var>>&& vars, Expr::Ptr&& body)
+		{
+			vector<Var> params;
+			for(auto it = vars.begin()+1; it != vars.end(); ++it)
+				params.emplace_back(std::move(**it));
+			return make_unique<Define>(std::move(*vars[0]), std::make_unique<Lambda>(params, std::move(body)));
+		};
+	static auto P = Or<unique_ptr<Define>>::OneOf(def1, def2);
+	return P(rg);
 }
 
-std::unique_ptr<Apply>  parseApply(Iter &start, Iter &end)
+Result<std::unique_ptr<If>>  parseIf(const Range& rg)
 {
-	++start;
-	auto rator = parse(start, end);
-	Apply::Operands rands;
-	while(start != end && *start != ")") {
-		rands.emplace_back(parse(start, end));
-	}
-	if(start == end)
-		throw ParseException("unclosed left paren in `apply`");
+	static auto p = And(Lit("("), Lit("if"), parse, parse, parse) >> 
+		[](Expr::Ptr&& pred, Expr::Ptr&& thn, Expr::Ptr&& els)
+		{
+			return std::make_unique<If>(std::move(pred), std::move(thn), std::move(els));
+		};
+	return p(rg);
+}
 
-	++start;
-	return std::make_unique<Apply>(std::move(rator), std::move(rands));
+Result<std::unique_ptr<Lambda>>  parseLambda(const Range& rg)
+{
+
+	static auto lp = Lit("("), rp = Lit(")"), lambda = Lit("lambda");
+	static auto P = And(lp, lambda, lp, MaybeMany(parseVar), rp, parse, rp) >>
+		[](vector<unique_ptr<Var>>&& vars, Expr::Ptr&& body)
+		{
+			vector<Var> params;
+			for(auto& v: vars) params.emplace_back(std::move(*v));
+			return make_unique<Lambda>(std::move(params), std::move(body));
+		};
+	return P(rg);
+}
+
+Result<std::unique_ptr<Let>>  parseLet(const Range& rg)
+{
+	static auto lp = Lit("("), rp = Lit(")"), let = Lit("let");
+	static auto bindPair = And(lp, parseVar, parse, rp) >>
+		[](unique_ptr<Var>&& v, Expr::Ptr&& e)
+		{
+			return make_pair<Var, Expr::Ptr>(std::move(*v), std::move(e));
+		};
+	static auto P = And(lp, let, lp, Many(bindPair), rp, parse, rp) >> 
+		[](vector<pair<Var,Expr::Ptr>>&& binds, Expr::Ptr&& b)
+		{
+			return make_unique<Let>(std::move(binds), std::move(b));
+		};
+	return P(rg);
+}
+
+Result<std::unique_ptr<Apply>>  parseApply(const Range& rg)
+{
+	static auto P = And(Lit("("), Many(parse), Lit(")")) >>
+		[](vector<Expr::Ptr>&& es)
+		{
+			auto rator = std::move(es[0]);
+			es.erase(es.begin());
+			return make_unique<Apply>(std::move(rator), std::move(es));
+		};
+
+	return P(rg);
 }
 
 
 //parse the program text as data
-unique_ptr<Value> parseDatum(Iter &start, Iter &end) 
+Result<std::shared_ptr<Value>> parseDatum(const Range&)
 {
-    if(start == end)  return nullptr;
-
-    const auto& str = *start;
-    if(std::isdigit(str[0]) || (str[0] == '-' && std::isdigit(str[1]))) {
-        return std::make_unique<Number>(std::stoll(*start++)); //
-    }
-    else if(*start == "(") {
-        ++start;
-		if(start != end && *start == ")") {
-			return make_unique<Nil>();
-		}
-
-		auto res = make_unique<Cons>();
-		res->car_ = parseDatum(start, end);
-		Cons* it = res.get();
-        while(start != end && *start != ")") {
-			if(*start == ".") { //a cons cell
-				++start;
-				it->cdr_ = parseDatum(start, end);
-				if(start != end && *start == ")") {
-					++start;
-					return res;
-				}else {
-					throw ParseException("ill formed cons cell");
-				}
-			}else {
-				auto new_cell = std::make_shared<Cons>(parseDatum(start, end));
-				it->cdr_ = new_cell;
-				it = new_cell.get();
-			}
-        }
-
-		if(start != end &&  *start == ")") {
-			++start;
-			return res;
-		}else {
-			throw ParseException("unclosed left paren in datum");
-		}
-    }
-    else {
-        return std::make_unique<Symbol>(*start++);
-    }
+	return {};
 }
+
+}//namespace Parser
