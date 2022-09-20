@@ -4,6 +4,13 @@
 namespace Parser {
 using namespace std;
 
+namespace Common
+{
+	static auto lP = Lit("("), rP = Lit(")"), Quo = Lit("'"), Dot = Lit(".");
+	static auto manyVar = Many(parseVar);
+	static auto maybeManyVar = MaybeMany(parseVar);
+}
+
 std::vector<std::string> tokenize(const char *c)
 {
 	std::vector<std::string> tokens;
@@ -53,8 +60,7 @@ Result<Expr::Ptr> parse(const Range& rg)
 		return parseQuote(rg);
 	}
 	else if(peek == "(") {
-		static auto sexp = Or<Expr::Ptr>::OneOf(parseDef, parseLet, parseLambda, parseIf, parseApply);
-		return sexp(rg);
+		return  Choose<Expr::Ptr>::OneOf(rg, parseDef, parseQuote, parseLet, parseLambda, parseIf, parseApply);
 	}
 	else {
 		return parseVar(rg);
@@ -67,11 +73,15 @@ Result<std::unique_ptr<NumberE>> parseNumber(const Range& rg)
 	try {
 		size_t pos;
 		auto val = make_unique<NumberE>(std::stoll(rg.cur(), &pos));
-		if(pos == rg.cur().size())
+		if(pos == rg.cur().size()) {
+			//cout << "[parseNumber]" << "parsed num: " << val->value_ << endl;
 			return {std::move(val), rg+1};
-		else 
+		} else {
+			//cout << "[parseNumber]" << "not a valid number: pos=" << pos << endl;
 			return {"not a valid number"};
+		}
 	}catch(exception& ex) {
+		//cout << "[parseNumber]" << "not a valid number: stoll ex" << endl;
 		return {"not a valid number"};
 	}
 }
@@ -80,25 +90,48 @@ Result<std::unique_ptr<Var>> parseVar(const Range& rg)
 {
 	if(rg.eof()) return {};
 
-	return {make_unique<Var>(rg.cur()), rg+1};
+
+	const auto& cur = rg.cur();
+	if(!cur.empty()) {
+		switch(cur[0]) {
+			case '(':
+			case ')':
+			case '#':
+			case '\'':
+			case '.':
+				return {};
+			default:
+				//cout << "[parseVar]" << "matched var: " << rg.cur() << endl;
+				return {make_unique<Var>(rg.cur()), rg+1};
+
+		}
+	}
+	return {};
 }
 
 Result<std::unique_ptr<Quote>> parseQuote(const Range& rg)
 {
-	return {};
+	static auto quote = Lit("quote");
+	static auto quo1 = All(Common::Quo, parseDatum) >> 
+		[](Value::Ptr&& datum) { return make_unique<Quote>(std::move(datum)); };
+	static auto quo2 = All(Common::lP, quote, parseDatum, Common::rP) >>
+		[](Value::Ptr&& datum) { return make_unique<Quote>(std::move(datum)); };
+
+	static auto P = Choose<unique_ptr<Quote>>::OneOf(quo1, quo2);
+	return P(rg);
 }
 
 Result<std::unique_ptr<Define>>  parseDef(const Range& rg)
 {
-	//auto def1 = And(rg, Lit("fuck"), Lit("define"));
-	static auto lp = Lit("("), rp = Lit(")"), defKw = Lit("define");
-	static auto def1 = And(lp, defKw, parseVar, parse, rp) >> 
+	static auto defKw = Lit("define");
+	static auto manyVar = Many(parseVar);
+	static auto def1 = All(Common::lP, defKw, parseVar, parse, Common::rP) >> 
 		[](unique_ptr<Var>&& v, Expr::Ptr&& body) 
 		{ 
 			return make_unique<Define>(std::move(*v), std::move(body)); 
 		};
 
-	static auto def2 = And(lp, defKw, lp, Many(parseVar), rp, parse, rp) >>
+	static auto def2 = All(Common::lP, defKw, Common::lP, manyVar, Common::rP, parse, Common::rP) >>
 		[](vector<unique_ptr<Var>>&& vars, Expr::Ptr&& body)
 		{
 			vector<Var> params;
@@ -106,13 +139,15 @@ Result<std::unique_ptr<Define>>  parseDef(const Range& rg)
 				params.emplace_back(std::move(**it));
 			return make_unique<Define>(std::move(*vars[0]), std::make_unique<Lambda>(params, std::move(body)));
 		};
-	static auto P = Or<unique_ptr<Define>>::OneOf(def1, def2);
+
+	static auto P = Choose<unique_ptr<Define>>::OneOf(def1, def2);
 	return P(rg);
 }
 
 Result<std::unique_ptr<If>>  parseIf(const Range& rg)
 {
-	static auto p = And(Lit("("), Lit("if"), parse, parse, parse) >> 
+	static auto ifKw = Lit("if");
+	static auto p = All(Common::lP, ifKw, parse, parse, parse, Common::rP) >>
 		[](Expr::Ptr&& pred, Expr::Ptr&& thn, Expr::Ptr&& els)
 		{
 			return std::make_unique<If>(std::move(pred), std::move(thn), std::move(els));
@@ -123,8 +158,8 @@ Result<std::unique_ptr<If>>  parseIf(const Range& rg)
 Result<std::unique_ptr<Lambda>>  parseLambda(const Range& rg)
 {
 
-	static auto lp = Lit("("), rp = Lit(")"), lambda = Lit("lambda");
-	static auto P = And(lp, lambda, lp, MaybeMany(parseVar), rp, parse, rp) >>
+	static auto lambda = Lit("lambda");
+	static auto P = All(Common::lP, lambda, Common::lP, Common::maybeManyVar, Common::rP, parse, Common::rP) >>
 		[](vector<unique_ptr<Var>>&& vars, Expr::Ptr&& body)
 		{
 			vector<Var> params;
@@ -136,23 +171,25 @@ Result<std::unique_ptr<Lambda>>  parseLambda(const Range& rg)
 
 Result<std::unique_ptr<Let>>  parseLet(const Range& rg)
 {
-	static auto lp = Lit("("), rp = Lit(")"), let = Lit("let");
-	static auto bindPair = And(lp, parseVar, parse, rp) >>
-		[](unique_ptr<Var>&& v, Expr::Ptr&& e)
+	static auto let = Lit("let");
+	static auto bindPair = All(Common::lP, parseVar, parse, Common::rP);
+	static auto binds = Many(bindPair);
+
+	static auto P = All(Common::lP, let, Common::lP, binds, Common::rP, parse, Common::rP) >> 
+		[](vector<tuple<unique_ptr<Var>,Expr::Ptr>>&& binds, Expr::Ptr&& b)
 		{
-			return make_pair<Var, Expr::Ptr>(std::move(*v), std::move(e));
-		};
-	static auto P = And(lp, let, lp, Many(bindPair), rp, parse, rp) >> 
-		[](vector<pair<Var,Expr::Ptr>>&& binds, Expr::Ptr&& b)
-		{
-			return make_unique<Let>(std::move(binds), std::move(b));
+			vector<pair<Var, Expr::Ptr>> kvs;
+			for(auto& kv: binds) kvs.emplace_back(std::move(*get<0>(kv)), std::move(get<1>(kv)));
+
+			return make_unique<Let>(std::move(kvs), std::move(b));
 		};
 	return P(rg);
 }
 
 Result<std::unique_ptr<Apply>>  parseApply(const Range& rg)
 {
-	static auto P = And(Lit("("), Many(parse), Lit(")")) >>
+	static auto manyExp = Many(parse);
+	static auto P = All(Common::lP, manyExp, Common::rP) >>
 		[](vector<Expr::Ptr>&& es)
 		{
 			auto rator = std::move(es[0]);
@@ -165,9 +202,35 @@ Result<std::unique_ptr<Apply>>  parseApply(const Range& rg)
 
 
 //parse the program text as data
-Result<std::shared_ptr<Value>> parseDatum(const Range&)
+Result<std::shared_ptr<Value>> parseDatum(const Range& rg)
 {
-	return {};
+	static auto num = parseNumber >> [](unique_ptr<NumberE>&& n) { return make_shared<Number>(n->value_); };
+	static auto sym = parseVar >> [](unique_ptr<Var>&& v) { return make_shared<Symbol>(std::move(v->v_)); };
+	static auto datums = Many(parseDatum);
+
+	static auto tail = All(Common::Dot, parseDatum) >> [](Value::Ptr&& d) { return d; };
+	static auto maybeTail = Maybe(tail);
+	static auto cons = All(Common::lP, datums, maybeTail, Common::rP) >>
+		[](vector<Value::Ptr>&& vals, vector<Value::Ptr>&& tail) 
+		{ 
+			Cons head;
+			auto it = &head;
+			for(auto& v: vals) {
+				it->cdr_ = make_shared<Cons>(v);
+				it = static_cast<Cons*>(it->cdr_.get());
+			}
+
+			if(tail.empty()) {
+				it->cdr_ = Nil::getInstance();
+			}else{
+				it->cdr_ = std::move(tail.back());
+			}
+
+			return head.cdr_;
+		};
+	static auto nil = All(Common::lP, Common::rP) >> []() { return Nil::getInstance(); };
+	static auto P = Choose<Value::Ptr>::OneOf(num, sym, cons, nil);
+	return P(rg);
 }
 
 }//namespace Parser

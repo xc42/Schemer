@@ -39,7 +39,7 @@ void repl(const Environment::Ptr env) {
 
         if(res) {
             try { //eval
-                res.value_->accept(eval);
+                res.getValue()->accept(eval);
 				eval.getResult()->accept(printer);
 				cout << endl;
             }
@@ -47,7 +47,7 @@ void repl(const Environment::Ptr env) {
                 std::cout << e.what() << "\n" ;
             }
         }else {
-			std::cerr << "ParseError: " <<  res.err_ << std::endl;
+			std::cerr << "ParseError: " <<  res.getErr() << std::endl;
 		}
     }
 }
