@@ -6,3 +6,4 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 add_subdirectory(fmt)
 add_subdirectory(interpreter)
+add_subdirectory(compiler)
