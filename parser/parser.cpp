@@ -39,6 +39,16 @@ std::vector<std::string> tokenize(const char *c)
 	return tokens;
 }
 
+Result<unique_ptr<Program>> parseProg(const Range& rg)
+{
+	static auto Defs = MaybeMany(parseDef);
+	static auto prog = All(Defs, parse) >>
+		[](vector<unique_ptr<Define>>&& defs, Expr::Ptr&& body)
+		{
+			return make_unique<Program>(std::move(defs), std::move(body));
+		};
+	return prog(rg);
+}
 
 Result<Expr::Ptr> parse(const Range& rg)
 {

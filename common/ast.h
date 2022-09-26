@@ -106,6 +106,13 @@ struct Quote: Expr{
 	std::shared_ptr<Value> datum_;
 };
 
+struct Program
+{
+	Program(std::vector<std::unique_ptr<Define>> &&defs, Expr::Ptr&& body): defs_(std::move(defs)), body_(std::move(body)) {}
+
+	std::vector<std::unique_ptr<Define>> defs_;
+	Expr::Ptr body_;
+};
 
 class VisitorE {
 public:

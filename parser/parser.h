@@ -134,7 +134,7 @@ auto operator>>(P&& p, F&& f)
 
 Result<std::shared_ptr<Value>> parseDatum(const Range&);
 
-
+Result<std::unique_ptr<Program>> parseProg(const Range& rg);
 Result<Expr::Ptr> parse(const Range&);
 Result<std::unique_ptr<NumberE>> parseNumber(const Range&);
 Result<std::unique_ptr<Var>> parseVar(const Range&);
