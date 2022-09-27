@@ -41,10 +41,6 @@ private:
 class CodegenIR : public VisitorE
 {
 public:
-	CodegenIR(llvm::LLVMContext& ctx, llvm::Module& md): ctx_(ctx), module_(md), builder_(ctx)
-	{
-		schemeValType = llvm::Type::getInt64Ty(ctx_);
-	}
 
 	~CodegenIR(){};
 
@@ -52,6 +48,11 @@ public:
 
 	void printIR();
 private:
+	CodegenIR(llvm::LLVMContext& ctx, llvm::Module& md): ctx_(ctx), module_(md), builder_(ctx)
+	{
+		schemeValType = llvm::Type::getInt64Ty(ctx_);
+	}
+
     void forNumber(const NumberE&) override;
     void forBoolean(const BooleanE&) override;
     void forVar(const Var&) override;
@@ -62,6 +63,9 @@ private:
     void forLambda(const Lambda&) override;
     void forApply(const Apply&) override;
 
+	void initializeGlobals();
+	static void checkArity(size_t actual, size_t expect);
+
 	llvm::LLVMContext& ctx_;
 	llvm::Module& module_;
 	llvm::IRBuilder<> builder_;
@@ -71,6 +75,6 @@ private:
 
 	//std::unique_ptr<SymTable> table_;
 	std::map<std::string, llvm::Value*> table_;
+	std::map<std::string, llvm::FunctionType*> globalFunc_;
 };
-
 
