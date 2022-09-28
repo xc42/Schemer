@@ -1,10 +1,10 @@
 #pragma once
 
-#include <cstdint>
+#include "scheme.h"
 
-using SchemeValTy = int64_t;
 extern "C"
 {
+	using SchemeValTy = Scheme::ValueType;
 	SchemeValTy display(SchemeValTy);
 	SchemeValTy cons(SchemeValTy, SchemeValTy);
 	SchemeValTy car(SchemeValTy);
@@ -14,3 +14,4 @@ extern "C"
 	SchemeValTy vector_length(SchemeValTy);
 	SchemeValTy vector_set(SchemeValTy, SchemeValTy, SchemeValTy);
 }
+

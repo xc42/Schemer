@@ -1,6 +1,7 @@
 #include "codegen.h"
 #include "llvm/IR/Verifier.h"
 #include "fmt/core.h"
+#include "value.h"
 #include "scheme.h"
 #include <unordered_set>
 
@@ -27,7 +28,13 @@ void CodegenIR::forVar(const Var& var)
 	value_ = it->second;
 }
 
-void CodegenIR::forQuote(const Quote&){}
+void CodegenIR::forQuote(const Quote& qo)
+{
+	const auto& datum = *qo.datum_;
+	switch(datum.type_)
+	{
+	}
+}
 
 void CodegenIR::forDefine(const Define& def)
 {
