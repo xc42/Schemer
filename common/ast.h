@@ -12,7 +12,7 @@ class VisitorE; //forward declaration of base visitor
 struct Expr {
     using Ptr = std::unique_ptr<Expr>;
 
-    enum class Type {Number, Boolean, Var, Quote, Define, Let, If, Lambda, Apply} type_;
+    enum class Type {Number, Boolean, Var, Quote, Define, SetBang, Begin, Let, If, Lambda, Apply} type_;
 
     Expr(Type t):type_(t){}
     virtual void accept(VisitorE& visitor) const = 0;
@@ -53,6 +53,15 @@ struct Define: Expr {
     Expr::Ptr body_;
 };
 
+struct SetBang: Expr {
+	SetBang(const Var& v, Expr::Ptr&& e): Expr(Expr::Type::SetBang), v_(v), e_(std::move(e)){}
+
+    void accept(VisitorE &v) const override;
+
+	Var v_;
+	Expr::Ptr e_;
+};
+
 struct If: Expr{
     If(Expr::Ptr &&p, Expr::Ptr &&c, Expr::Ptr &&a):
         Expr(Expr::Type::If), pred_(std::move(p)), thn_(std::move(c)), els_(std::move(a)){}
@@ -87,6 +96,12 @@ struct Lambda: Expr{
 	std::shared_ptr<Expr> body_;
 };
 
+struct Begin: Expr {
+	Begin(std::vector<Expr::Ptr>&& es):Expr(Expr::Type::Begin), es_(std::move(es)) {}
+    void accept(VisitorE &v) const override;
+	std::vector<Expr::Ptr> es_;
+};
+
 struct Apply: Expr{
     using Operands = std::vector<Expr::Ptr>;
     Apply(Expr::Ptr &&rator, Operands&& rands):
@@ -98,21 +113,17 @@ struct Apply: Expr{
     Operands operands_;
 };
 
-class Value;
-struct Quote: Expr{
-    Quote(const std::shared_ptr<Value>& v):Expr(Expr::Type::Quote), datum_(v){}
+namespace Parser{
+	class Datum;
+}
+
+struct Quote: Expr {
+    Quote(const std::shared_ptr<Parser::Datum>& v):Expr(Expr::Type::Quote), datum_(v){}
     void accept(VisitorE &v) const override;
 
-	std::shared_ptr<Value> datum_;
+	std::shared_ptr<Parser::Datum> datum_;
 };
 
-struct Program
-{
-	Program(std::vector<std::unique_ptr<Define>> &&defs, Expr::Ptr&& body): defs_(std::move(defs)), body_(std::move(body)) {}
-
-	std::vector<std::unique_ptr<Define>> defs_;
-	Expr::Ptr body_;
-};
 
 class VisitorE {
 public:
@@ -121,6 +132,8 @@ public:
     virtual void forVar(const Var&)=0;
     virtual void forQuote(const Quote&)=0;
     virtual void forDefine(const Define&)=0;
+    virtual void forSetBang(const SetBang&)=0;
+    virtual void forBegin(const Begin&)=0;
     virtual void forIf(const If&)=0;
 	virtual void forLet(const Let&)=0;
     virtual void forLambda(const Lambda&)=0;
@@ -133,6 +146,8 @@ inline void BooleanE::accept(VisitorE& v) const { v.forBoolean(*this); }
 inline void Var::accept(VisitorE& v) const { v.forVar(*this); }
 inline void Quote::accept(VisitorE& v) const { v.forQuote(*this); }
 inline void Define::accept(VisitorE& v) const { v.forDefine(*this); }
+inline void SetBang::accept(VisitorE& v) const { v.forSetBang(*this); }
+inline void Begin::accept(VisitorE& v) const { v.forBegin(*this); }
 inline void Let::accept(VisitorE& v) const { v.forLet(*this); }
 inline void If::accept(VisitorE& v) const { v.forIf(*this); }
 inline void Lambda::accept(VisitorE& v) const { v.forLambda(*this); }

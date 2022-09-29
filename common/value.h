@@ -4,6 +4,9 @@
 #include <functional>
 #include <unordered_set>
 
+namespace Interp
+{
+
 class VisitorV;
 // Value = Number| Symbol| Appliable| Cons| Boolean
 // Appliable = LambdaV| Procedure
@@ -106,10 +109,17 @@ private:
 
 struct Void: public Value
 {
+public:
+	static auto getInstance()
+	{
+		std::shared_ptr<Void> void_{ new Void };
+		return void_;
+	}
+    ~Void()=default;
+private:
 	Void():Value(Value::Type::Void) {}
 
     void accept(VisitorV &v) const override;
-    ~Void()=default;
 };
 
 class VisitorV
@@ -152,25 +162,4 @@ inline const char* typeStr(Value::Type t)
 	}
 }
 
-/*
-class Stringfier: public VisitorV{
-public:
-    static std::string&& to_string(const Value& val) {
-        static Stringfier printer;
-        val.accept(printer);
-        return std::move(printer.str_);
-    }
-
-    ~Stringfier()=default;
-private:
-    void forNumber(const NumberV& num) override { str_ = std::to_string(num.value_); }
-    void forSymbol(const Symbol& s) override { str_ = *s.ptr_; }
-    void forAppliable(const Appliable& app) override{ 
-        str_ = app.func_type_ == Appliable::Type::Lambda? "#<lambda>": "#<buildin-procedure>";
-    }
-    void forBoolean(const Boolean& b) override { str_ = b.value_? "#t": "#f"; }
-    void forCons(const Cons&) override;
-
-    std::string str_;
-};
-*/
+} //namespace Interp

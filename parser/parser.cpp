@@ -1,7 +1,7 @@
 #include "parser.h"
-#include "value.h"
 
 namespace Parser {
+
 using namespace std;
 
 namespace Common
@@ -39,16 +39,6 @@ std::vector<std::string> tokenize(const char *c)
 	return tokens;
 }
 
-Result<unique_ptr<Program>> parseProg(const Range& rg)
-{
-	static auto Defs = MaybeMany(parseDef);
-	static auto prog = All(Defs, parse) >>
-		[](vector<unique_ptr<Define>>&& defs, Expr::Ptr&& body)
-		{
-			return make_unique<Program>(std::move(defs), std::move(body));
-		};
-	return prog(rg);
-}
 
 Result<Expr::Ptr> parse(const Range& rg)
 {
@@ -123,9 +113,9 @@ Result<std::unique_ptr<Quote>> parseQuote(const Range& rg)
 {
 	static auto quote = Lit("quote");
 	static auto quo1 = All(Common::Quo, parseDatum) >> 
-		[](Value::Ptr&& datum) { return make_unique<Quote>(std::move(datum)); };
+		[](Datum::Ptr&& datum) { return make_unique<Quote>(std::move(datum)); };
 	static auto quo2 = All(Common::lP, quote, parseDatum, Common::rP) >>
-		[](Value::Ptr&& datum) { return make_unique<Quote>(std::move(datum)); };
+		[](Datum::Ptr&& datum) { return make_unique<Quote>(std::move(datum)); };
 
 	static auto P = Choose<unique_ptr<Quote>>::OneOf(quo1, quo2);
 	return P(rg);
@@ -212,34 +202,34 @@ Result<std::unique_ptr<Apply>>  parseApply(const Range& rg)
 
 
 //parse the program text as data
-Result<std::shared_ptr<Value>> parseDatum(const Range& rg)
+Result<Datum::Ptr> parseDatum(const Range& rg)
 {
-	static auto num = parseNumber >> [](unique_ptr<NumberE>&& n) { return make_shared<Number>(n->value_); };
-	static auto sym = parseVar >> [](unique_ptr<Var>&& v) { return make_shared<Symbol>(std::move(v->v_)); };
+	static auto num = parseNumber >> [](unique_ptr<NumberE>&& n) { return make_shared<DatumNum>(n->value_); };
+	static auto sym = parseVar >> [](unique_ptr<Var>&& v) { return make_shared<DatumSym>(std::move(v->v_)); };
 	static auto datums = Many(parseDatum);
 
-	static auto tail = All(Common::Dot, parseDatum) >> [](Value::Ptr&& d) { return d; };
+	static auto tail = All(Common::Dot, parseDatum) >> [](Datum::Ptr&& d) { return d; };
 	static auto maybeTail = Maybe(tail);
 	static auto cons = All(Common::lP, datums, maybeTail, Common::rP) >>
-		[](vector<Value::Ptr>&& vals, vector<Value::Ptr>&& tail) 
+		[](vector<Datum::Ptr>&& vals, vector<Datum::Ptr>&& tail) 
 		{ 
-			Cons head;
+			DatumPair head;
 			auto it = &head;
 			for(auto& v: vals) {
-				it->cdr_ = make_shared<Cons>(v);
-				it = static_cast<Cons*>(it->cdr_.get());
+				it->cdr_ = make_shared<DatumPair>(v);
+				it = static_cast<DatumPair*>(it->cdr_.get());
 			}
 
 			if(tail.empty()) {
-				it->cdr_ = Nil::getInstance();
+				it->cdr_ = DatumNil::getInstance();
 			}else{
 				it->cdr_ = std::move(tail.back());
 			}
 
 			return head.cdr_;
 		};
-	static auto nil = All(Common::lP, Common::rP) >> []() { return Nil::getInstance(); };
-	static auto P = Choose<Value::Ptr>::OneOf(num, sym, cons, nil);
+	static auto nil = All(Common::lP, Common::rP) >> []() { return DatumNil::getInstance(); };
+	static auto P = Choose<Datum::Ptr>::OneOf(num, sym, cons, nil);
 	return P(rg);
 }
 

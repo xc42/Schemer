@@ -122,7 +122,8 @@ struct Result<void>
 };
 
 
-template<class P, class F>
+template<class P, class F,
+	class dummy = std::enable_if_t<std::is_invocable<P, const Range&>::value, void>>
 auto operator>>(P&& p, F&& f)
 {
 	return [p=std::forward<P>(p), f=std::forward<F>(f)](const Range& rg)
@@ -131,10 +132,68 @@ auto operator>>(P&& p, F&& f)
 	};
 }
 
+class Datum
+{
+public:
+	enum class Type { Number, Boolean, Symbol, Pair, Nil} type_;
 
-Result<std::shared_ptr<Value>> parseDatum(const Range&);
+	using Ptr = std::shared_ptr<Datum>;
 
-Result<std::unique_ptr<Program>> parseProg(const Range& rg);
+	Datum(Type t): type_(t) {}
+	virtual ~Datum()=0;
+};
+
+inline Datum::~Datum() {}
+
+struct DatumNil: public Datum
+{
+public:
+	static auto getInstance() {
+		static std::shared_ptr<DatumNil> nil{new DatumNil};
+		return nil;
+	}
+	~DatumNil(){}
+private:
+	DatumNil():Datum(Datum::Type::Nil) {}
+};
+
+struct DatumNum: public Datum
+{
+	DatumNum(int64_t v): Datum(Datum::Type::Number), value_(v) {}
+	~DatumNum(){}
+
+	int64_t value_;
+};
+
+struct DatumBool: public Datum
+{
+	DatumBool(bool v): Datum(Datum::Type::Boolean), value_(v) {}
+	~DatumBool(){}
+
+	bool value_;
+};
+
+struct DatumSym: public Datum
+{
+	DatumSym(const std::string& s):Datum(Datum::Type::Symbol), value_(s) {};
+	~DatumSym(){}
+
+	std::string value_;
+};
+
+struct DatumPair: public Datum
+{
+	DatumPair(const Datum::Ptr& car = nullptr, const Datum::Ptr& cdr=nullptr): 
+		Datum(Datum::Type::Pair), car_(car), cdr_(cdr) {}
+	~DatumPair(){}
+
+	Datum::Ptr car_, cdr_;
+};
+
+
+
+Result<Datum::Ptr> parseDatum(const Range&);
+
 Result<Expr::Ptr> parse(const Range&);
 Result<std::unique_ptr<NumberE>> parseNumber(const Range&);
 Result<std::unique_ptr<Var>> parseVar(const Range&);
