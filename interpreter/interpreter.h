@@ -5,6 +5,8 @@
 #include "fmt/core.h"
 #include <numeric>
 
+namespace Interp {
+
 class Environment {
 public:
     using Ptr = std::shared_ptr<Environment>;
@@ -61,8 +63,10 @@ private:
     void forNumber(const NumberE& num) override { result_ = std::make_unique<Number>(num.value_); }
     void forBoolean(const BooleanE& b) override { result_ = std::make_unique<Boolean>(b.b_); }
     void forVar(const Var& s) override { result_ = (*env_)(s); };
-    void forQuote(const Quote& quo) override{ result_ = quo.datum_; }
+    void forQuote(const Quote& quo) override;
     void forDefine(const Define& def) override;
+    void forSetBang(const SetBang& setBang) override {} //TODO
+    void forBegin(const Begin& bgn) override{} //TODO
     void forIf(const If&) override;
 	void forLet(const Let&) override;
     void forLambda(const Lambda & lambda) override { result_ = std::make_shared<Closure>(std::make_unique<Lambda>(lambda), env_);
@@ -71,7 +75,6 @@ private:
 
     Value::Ptr result_;
     Environment::Ptr env_;
-	static Value::Ptr void_;
 };
 
 class ValuePrinter: public VisitorV
@@ -96,6 +99,7 @@ private:
 
 	std::ostream &os_;
 };
+
 
 namespace builtin{
 
@@ -142,3 +146,4 @@ private:
 
 Environment::Ptr getInitialTopEnv();
 } //namespace builtin
+} //namespace Interp

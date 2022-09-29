@@ -3,6 +3,7 @@
 #include <iostream>
 
 using namespace std;
+using namespace Interp;
 
 void repl(const Environment::Ptr env) {
     const std::string input_promt{"~> "};

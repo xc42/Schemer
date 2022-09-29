@@ -1,6 +1,10 @@
 #include "interpreter.h"
+#include "parser.h"
+
+namespace Interp {
 
 using namespace std;
+using namespace Parser;
 
 Environment::Ptr Environment::extend(const std::vector<std::pair<Var, Value::Ptr>> &binds, const Environment::Ptr& old)
 {
@@ -23,12 +27,60 @@ Value::Ptr Environment::operator()(const Var& s)
 	}
 }
 
-Value::Ptr Evaluator::void_ = make_shared<Void>();
+
+Value::Ptr convertDatum(const Datum& dat)
+{
+	Value::Ptr res;
+	switch(dat.type_)
+	{
+		case Datum::Type::Number:
+		{
+			res = std::make_shared<Number>(static_cast<const DatumNum&>(dat).value_);
+			break;
+		}
+		case Datum::Type::Boolean:
+		{
+			res = std::make_shared<Boolean>(static_cast<const DatumBool&>(dat).value_);
+			break;
+		}
+		case Datum::Type::Nil:
+		{
+			res = Nil::getInstance();
+			break;
+		}
+		case Datum::Type::Symbol:
+		{
+			res = std::make_shared<Symbol>(static_cast<const DatumSym&>(dat).value_);
+			break;
+		}
+		case Datum::Type::Pair:
+		{
+			const auto& cons = static_cast<const DatumPair&>(dat);
+			res = make_shared<Cons>(convertDatum(*cons.car_), convertDatum(*cons.cdr_));
+		}
+	}
+	return res;
+}
+
+void Evaluator::forQuote(const Quote& quo)
+{
+	static unordered_map<const Quote*, Value::Ptr> datums;
+
+	auto it = datums.find(&quo);
+	if(it != datums.end()) {
+		result_ = it->second;
+		return;
+	}
+
+	const auto& dat = *quo.datum_;
+	result_ = convertDatum(dat);
+	datums.insert({&quo, result_});
+}
 
 void Evaluator::forDefine(const Define &def) {
     def.body_->accept(*this);
     env_->bind(def.name_, result_);
-	result_ = void_;
+	result_ = Void::getInstance();
 }
 
 void Evaluator::forIf(const If &if_expr) {
@@ -179,3 +231,4 @@ Environment::Ptr getInitialTopEnv()
 }
 
 }//namespace builtin
+} //namespace Interp
