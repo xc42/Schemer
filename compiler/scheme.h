@@ -13,11 +13,12 @@ namespace Scheme
 		Vector 		= 0b010,
 		Closure 	= 0b011,
 		Box 		= 0b100,
-		Bool		= 0b1101, 
-		True		= 0b11101,
-		False		= 0b01101,
-		Nil			= 0b000101,
-		Void		= 0b100101
+		Symbol		= 0b110,
+		Bool		= 0b00101, 
+		True		= 0b100101,
+		False		= 0b000101,
+		Nil			= 0b01101,
+		Void		= 0b10101,
 	};
 
 	enum class Mask : unsigned
@@ -27,9 +28,10 @@ namespace Scheme
 		Vector 		= 0b111,
 		Closure 	= 0b111,
 		Box 		= 0b111,
-		Bool		= 0b1111, //true 0b11101 false 0b01101
-		Nil			= 0b111111,
-		Void		= 0b111111
+		Symbol		= 0b111,
+		Bool		= 0b11111,
+		Nil			= 0b11111,
+		Void		= 0b11111
 	};
 
 	//object allocate on heap should at least 8 bytes aligned
@@ -44,4 +46,17 @@ namespace Scheme
 		std::size_t len;
 		ValueType   *arr;
 	};
+
+	struct alignas(8) Sym
+	{
+		const char* s;
+	};
+
+	inline ValueType toFixnumReps(int64_t n) {
+		return n << 3;
+	}
+
+	inline ValueType toBoolReps(bool b) {
+		return b? static_cast<ValueType>(Tag::True): static_cast<ValueType>(Tag::False);
+	}
 };

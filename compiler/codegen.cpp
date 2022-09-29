@@ -9,17 +9,17 @@ using namespace llvm;
 using namespace std;
 
 
-void CodegenIR::forNumber(const NumberE& n)
+void ExprCodeGen::forNumber(const NumberE& n)
 {
-	value_ = ConstantInt::getSigned(IntegerType::get(ctx_, 64), n.value_ << 3); //see scheme.h value tagging
+	value_ = ConstantInt::getSigned(IntegerType::get(ctx_, 64), Scheme::toFixnumReps(n.value_)); //see scheme.h value tagging
 }
 
-void CodegenIR::forBoolean(const BooleanE& b)
+void ExprCodeGen::forBoolean(const BooleanE& b)
 {
-	value_ = ConstantInt::getSigned(IntegerType::get(ctx_, 1), b.b_? static_cast<int>(Scheme::Tag::True): static_cast<int>(Scheme::Tag::False)); 
+	value_ = ConstantInt::getSigned(IntegerType::get(ctx_, 1), Scheme::toBoolReps(b.b_));
 }
 
-void CodegenIR::forVar(const Var& var)
+void ExprCodeGen::forVar(const Var& var)
 {
 	auto it = table_.find(var.v_);
 	if(it == table_.end()) 
@@ -28,52 +28,47 @@ void CodegenIR::forVar(const Var& var)
 	value_ = it->second;
 }
 
-void CodegenIR::forQuote(const Quote& qo)
+void ExprCodeGen::forQuote(const Quote& qo)
 {
-	const auto& datum = *qo.datum_;
-	switch(datum.type_)
-	{
-	}
-}
-
-void CodegenIR::forDefine(const Define& def)
-{
-	table_.clear(); //assume define only in toplevel(TODO support inner define)
-	if(def.body_->type_ == Expr::Type::Lambda) {
-		const auto& lambda = static_cast<const Lambda&>(*def.body_);
-		//auto it = globalFunc_.find(def.name_.v_);
-		//if(it != globalFunc_.end()) {
-		//	throw std::runtime_error("redefination of function: " + def.name_.v_);
-		//}
-
-		vector<Type*> paramTys{lambda.arity(), schemeValType};
-		auto funcTy = FunctionType::get(schemeValType, paramTys, false);
-		//it->second = funcTy; //store it
-
-		auto func = Function::Create(funcTy, llvm::GlobalValue::ExternalLinkage, def.name_.v_, &module_);
-
-		auto entryBB = BasicBlock::Create(ctx_, "entry", func);
-		builder_.SetInsertPoint(entryBB);
-
-		const auto& args = func->args();
-		const auto& params = *lambda.params_;
-		int i = 0;
-		for(auto it = args.begin(); it != args.end(); ++it, ++i) {
-			table_[params[i]] = it;
+	switch(qo.datum_->type_) {
+		case Parser::Datum::Type::Number:
+		{
+			const auto& n = static_cast<Parser::DatumNum&>(*qo.datum_);
+			value_ = ConstantInt::getSigned(IntegerType::get(ctx_, 64), Scheme::toFixnumReps(n.value_));
+			break;
 		}
-
-		lambda.body_->accept(*this);
-		builder_.CreateRet(value_);
-
-		verifyFunction(*func, &llvm::errs());
-
-		value_ = func;
-	}else {
-		throw std::runtime_error("unimpl");
+		case Parser::Datum::Type::Boolean:
+		{
+			const auto& b =  static_cast<Parser::DatumBool&>(*qo.datum_);
+			value_ = ConstantInt::getSigned(IntegerType::get(ctx_, 1), Scheme::toBoolReps(b.value_));
+			break;
+		}
+		case Parser::Datum::Type::Nil:
+		{
+			value_ =  ConstantInt::getSigned(IntegerType::get(ctx_, 64), static_cast<Scheme::ValueType>(Scheme::Tag::Nil)); 
+			break;
+		}
+		defualt:
+		{
+			throw std::runtime_error("complex datum should be placed as global variable(using define) and initialize in main");
+		}
 	}
 }
 
-void CodegenIR::forIf(const If& ifExp)
+
+void ExprCodeGen::forSetBang(const SetBang& setBang)
+{
+
+}
+
+void ExprCodeGen::forBegin(const Begin& bgn)
+{
+	for(const auto& e: bgn.es_) {
+		e->accept(*this);
+	}
+}
+
+void ExprCodeGen::forIf(const If& ifExp)
 {
 	ifExp.pred_->accept(*this);
 	auto condV = value_;
@@ -107,7 +102,7 @@ void CodegenIR::forIf(const If& ifExp)
 	value_ = phiV;
 }
 
-void CodegenIR::forLet(const Let& let)
+void ExprCodeGen::forLet(const Let& let)
 {
 	for(auto& kv: let.binds_) {
 		kv.second->accept(*this);
@@ -116,9 +111,9 @@ void CodegenIR::forLet(const Let& let)
 	let.body_->accept(*this);
 }
 
-void CodegenIR::forLambda(const Lambda&){}
+void ExprCodeGen::forLambda(const Lambda&){}
 
-void CodegenIR::forApply(const Apply& app)
+void ExprCodeGen::forApply(const Apply& app)
 {
 	vector<llvm::Value*> args;
 	for(const auto& a: app.operands_) {
@@ -173,12 +168,7 @@ void CodegenIR::forApply(const Apply& app)
 }
 
 
-void CodegenIR::printIR()
-{
-	module_.print(llvm::outs(), nullptr);
-}
-
-void CodegenIR::initializeGlobals()
+void ProgramCodeGen::initializeGlobals()
 {
 	static const map<string, int> builtinFunc = { 
 		{"display", 1},
@@ -199,34 +189,52 @@ void CodegenIR::initializeGlobals()
 	}
 }
 
-void CodegenIR::forProg(Program& prog)
+void ProgramCodeGen::gen(FrontEndPass::Program& prog)
 {
-	LLVMContext ctx;
-	Module mod("schemeMain", ctx);
+	initializeGlobals();
 
-	CodegenIR gen(ctx, mod);
-	gen.initializeGlobals();
+	for(auto& [def, passCtx]: prog) {
+		if(def.body_->type_ == Expr::Type::Lambda) {
+			const auto& lambda = static_cast<const Lambda&>(*def.body_);
 
-	for(const auto& def: prog.defs_) {
-		def->accept(gen);
+			vector<Type*> paramTys{lambda.arity(), schemeValType};
+			auto funcTy = FunctionType::get(schemeValType, paramTys, false);
+			auto func = Function::Create(funcTy, llvm::GlobalValue::ExternalLinkage, def.name_.v_, &module_);
+
+			auto entryBB = BasicBlock::Create(ctx_, "entry", func);
+			builder_.SetInsertPoint(entryBB);
+
+			SymTable table;
+			const auto& args = func->args();
+			const auto& params = *lambda.params_;
+			int i = 0;
+			for(auto it = args.begin(); it != args.end(); ++it, ++i) {
+				table[params[i]] = it;
+			}
+
+			ExprCodeGen exprGen(builder_, module_, passCtx, table);
+			lambda.body_->accept(exprGen);
+			builder_.CreateRet(exprGen.getValue());
+
+			verifyFunction(*func, &llvm::errs());
+
+		}else {
+			throw std::runtime_error("unimpl");
+		}
+
 	}
 
-	if(prog.body_) {
-		vector<Expr::Ptr> arg;
-		arg.emplace_back(std::move(prog.body_));
-		Define main(Var("main"), 
-				make_unique<Lambda>(vector<Var>{}, 
-					make_unique<Apply>( make_unique<Var>("display"), std::move(arg))));
+	verifyModule(module_, &llvm::errs());
 
-		main.accept(gen);
-	}
-
-	verifyModule(mod, &llvm::errs());
-
-	gen.printIR();
 }
 
-void CodegenIR::checkArity(size_t actual, size_t expect)
+
+void ProgramCodeGen::printIR()
+{
+	module_.print(llvm::outs(), nullptr);
+}
+
+void ExprCodeGen::checkArity(size_t actual, size_t expect)
 {
 	if(actual != expect) {
 		throw std::invalid_argument(fmt::format("expect {} arg(s), but got {}", expect, actual));
