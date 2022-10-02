@@ -8,23 +8,41 @@
 
 namespace FrontEndPass
 {
-/*
-template<class Fn, class Ret>
-struct MapExpr: public VisitorE
+
+class DefaultRecur: public VisitorE
 {
-    virtual void forNumber(const NumberE&){}
-    virtual void forBoolean(const BooleanE&){}
-    virtual void forVar(const Var&){}
-    virtual void forQuote(const Quote&){}
-    virtual void forDefine(const Define&){}
-    virtual void forSetBang(const SetBang&){}
-    virtual void forBegin(const Begin&){}
-    virtual void forIf(const If&){}
-	virtual void forLet(const Let&){}
-    virtual void forLambda(const Lambda&){}
-    virtual void forApply(const Apply&){}
+public:
+    virtual void forNumber(const NumberE&) override {}
+    virtual void forBoolean(const BooleanE&) override {}
+    virtual void forVar(const Var&) override {}
+    virtual void forQuote(const Quote&) override {}
+    virtual void forDefine(const Define& def) override { def.body_->accept(*this); }
+    virtual void forSetBang(const SetBang& setBang) override { setBang.e_->accept(*this); }
+    virtual void forBegin(const Begin& bgn) override { for(const auto& e: bgn.es_) e->accept(*this); }
+    virtual void forIf(const If& ifExpr) override { 
+		ifExpr.pred_->accept(*this);
+		ifExpr.thn_->accept(*this);
+		ifExpr.els_->accept(*this);
+	}
+	virtual void forLet(const Let& let) override {
+		for(const auto& kv: let.binds_) {
+			kv.second->accept(*this);
+		}
+		let.body_->accept(*this);
+	}
+
+    virtual void forLambda(const Lambda& lam) override { lam.body_->accept(*this); }
+
+    virtual void forApply(const Apply& app) override {
+		app.operator_->accept(*this);
+		for(const auto& arg: app.operands_) {
+			arg->accept(*this);
+		}
+	}
+
 };
 
+/*
 template<class FoldFn>
 struct FoldExpr : public VisitorE 
 {
@@ -49,7 +67,8 @@ struct FoldExpr : public VisitorE
 //store some info/data through some passes
 struct PassContext
 {
-	std::unordered_set<const Var*> assignedVars; //result from CollectAssign
+	std::unordered_set<std::string> assignedVars; //result from CollectAssign
+	std::unordered_set<std::string> freeVars; //result from  FreeVariable
 };
 
 class Program
@@ -69,43 +88,53 @@ private:
 	std::list<Pair> defs_;
 };
 
-class CollectAssign: public VisitorE
+class CollectAssign: public DefaultRecur
 {
 public:
-    void forNumber(const NumberE&){}
-    void forBoolean(const BooleanE&){}
-    void forVar(const Var&){}
-    void forQuote(const Quote&){}
-    void forDefine(const Define& def) { def.body_->accept(*this); }
-    void forSetBang(const SetBang& setBang) { assigned.insert(&(setBang.v_)); }
-    void forBegin(const Begin& bgn) { for(const auto& e: bgn.es_) e->accept(*this); }
-    void forIf(const If& ifExpr) { 
-		ifExpr.pred_->accept(*this);
-		ifExpr.thn_->accept(*this);
-		ifExpr.els_->accept(*this);
-	}
-	void forLet(const Let& let){
-		for(const auto& kv: let.binds_) {
-			kv.second->accept(*this);
-		}
-		let.body_->accept(*this);
-	}
+    void forSetBang(const SetBang& setBang) override { assigned.insert(setBang.v_); }
 
-    void forLambda(const Lambda& lam){
-		lam.body_->accept(*this);
-	}
-
-    void forApply(const Apply& app){
-		app.operator_->accept(*this);
-		for(const auto& arg: app.operands_) {
-			arg->accept(*this);
+	static void run(Program& prog, PassContext& ctx) {
+		size_t i = 0;
+		for(auto& def: prog) {
+			CollectAssign collector;
+			def.first.body_->accept(collector);
+			ctx.assignedVars = std::move(collector.assigned);
 		}
 	}
-
-	void dump(PassContext& ctx) { ctx.assignedVars = std::move(assigned); }
 
 private:
-	std::unordered_set<const Var*> assigned;
+	std::unordered_set<std::string> assigned;
+};
+
+class FreeVariable: public DefaultRecur
+{
+public:
+    virtual void forVar(const Var& v) override { freeVars_.insert(v.v_); };
+	virtual void forLet(const Let& let) override { 
+		let.body_->accept(*this);
+		for(const auto& kv: let.binds_) {
+			kv.second->accept(*this);
+			freeVars_.erase(kv.first.v_);
+		}
+	}
+    virtual void forLambda(const Lambda& lam) override {
+		lam.body_->accept(*this);
+		for(const auto& p: *lam.params_) {
+			freeVars_.erase(p.v_);
+		}
+	}
+
+	static void run(Program& prog, PassContext& ctx) {
+		size_t i = 0;
+		for(auto& def: prog) {
+			FreeVariable fv;
+			def.first.body_->accept(fv);
+			ctx.freeVars = std::move(fv.freeVars_);
+		}
+	}
+	
+private:
+	std::unordered_set<std::string> freeVars_;
 };
 
 //functions 
@@ -113,10 +142,6 @@ using PassFunc = void(*)(Program&);
 
 Parser::Result<std::unique_ptr<Program>> parseProg(const Parser::Range& rg);
 
-
-
-
-void collectAssign(Program& p);
 
 void  runAllPass(Program& p);
 

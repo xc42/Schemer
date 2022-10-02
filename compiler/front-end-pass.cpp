@@ -27,15 +27,6 @@ Result<unique_ptr<Program>> parseProg(const Range& rg)
 	return prog(rg);
 }
 
-void collectAssign(Program& prog)
-{
-	size_t i = 0;
-	for(auto& def: prog) {
-		CollectAssign collector;
-		def.first.body_->accept(collector);
-		collector.dump(def.second);
-	}
-}
 
 void  runAllPass(Program& p)
 {

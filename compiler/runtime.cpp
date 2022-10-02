@@ -5,7 +5,7 @@
 
 using namespace std;
 
-#define IsSchemeType(val, Ty) (((val) & static_cast<unsigned>(Scheme::Tag::Ty)) == static_cast<unsigned>(Scheme::Mask::Ty))
+#define IsSchemeType(val, Ty) (((val) & static_cast<unsigned>(Scheme::Mask::Ty)) == static_cast<unsigned>(Scheme::Tag::Ty))
 #define TagSchemeVal(val, Ty) ((val) | static_cast<unsigned>(Scheme::Tag::Ty))
 
 #define ToConsPtr(val) reinterpret_cast<Scheme::Cons*>(val & ~static_cast<SchemeValTy>(Scheme::Mask::Pair))

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 namespace Scheme
 {
@@ -50,6 +51,12 @@ namespace Scheme
 	struct alignas(8) Sym
 	{
 		const char* s;
+	};
+
+	struct alignas(8) Closure
+	{
+		void *code;
+		std::vector<ValueType> args;
 	};
 
 	inline ValueType toFixnumReps(int64_t n) {
