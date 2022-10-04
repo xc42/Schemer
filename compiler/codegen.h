@@ -4,6 +4,7 @@
 
 #include "llvm/IR/IRBuilder.h"
 #include "front-end-pass.h"
+#include "scheme.h"
 
 /*
 class SymTable  //environment
@@ -49,6 +50,7 @@ public:
 		builder_(bder), module_(md), ctx_(bder.getContext()), curCtx_(ctx), table_(tb)
 	{
 		schemeValType = llvm::Type::getInt64Ty(ctx_);
+		closureType_ = llvm::StructType::getTypeByName(ctx_, "Closure");
 	}
 
 	llvm::Value* getValue() { return value_; }
@@ -70,6 +72,13 @@ private:
 
 	static void checkArity(size_t actual, size_t expect);
 
+	auto llvmInt64(int64_t v) { 
+		return llvm::ConstantInt::getSigned(llvm::IntegerType::getInt64Ty(ctx_), v); 
+	}
+	
+	llvm::Value* getSchemeInt(int v) {
+		return llvm::ConstantInt::getSigned(llvm::IntegerType::get(ctx_, 64), Scheme::toFixnumReps(v)); //see scheme.h value tagging
+	}
 
 	llvm::Module& module_;
 	llvm::IRBuilder<>& builder_;
@@ -82,8 +91,8 @@ private:
 
 	//std::unique_ptr<SymTable> table_;
 	std::map<std::string, llvm::Value*> table_;
-	std::map<std::string, llvm::FunctionType*> globalFunc_;
 	llvm::Type *schemeValType;
+	llvm::Type *closureType_;
 };
 
 class ProgramCodeGen
@@ -96,6 +105,8 @@ public:
 
 	void gen(FrontEndPass::Program& prog);
 	void printIR();
+
+	static std::string simpleMangle(const std::string& s);
 private:
 	void initializeGlobals();
 
@@ -104,4 +115,31 @@ private:
 	llvm::IRBuilder<> builder_;
 	llvm::Type *schemeValType;
 
+};
+
+class FreeVarScanner: public FrontEndPass::DefaultRecur
+{
+public:
+    virtual void forVar(const Var& v) override { 
+		if(Scheme::primitives.count(v.v_) == 0) 
+			freeVars_.insert(v.v_); 
+	}
+
+	virtual void forLet(const Let& let) override { 
+		let.body_->accept(*this);
+		for(const auto& kv: let.binds_) {
+			kv.second->accept(*this);
+			freeVars_.erase(kv.first.v_);
+		}
+	}
+    virtual void forLambda(const Lambda& lam) override {
+		lam.body_->accept(*this);
+		for(const auto& p: *lam.params_) {
+			freeVars_.erase(p.v_);
+		}
+	}
+
+	const auto& getFVs() { return freeVars_; }
+private:
+	std::unordered_set<std::string> freeVars_;
 };

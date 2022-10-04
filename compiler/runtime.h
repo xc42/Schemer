@@ -13,5 +13,7 @@ extern "C"
 	SchemeValTy vector_ref(SchemeValTy, SchemeValTy);
 	SchemeValTy vector_length(SchemeValTy);
 	SchemeValTy vector_set(SchemeValTy, SchemeValTy, SchemeValTy);
+
+	SchemeValTy allocateClosure(char* code, int arity, int fvs, ...);
 }
 

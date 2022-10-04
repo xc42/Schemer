@@ -88,7 +88,7 @@
 	  [(If e1 e2 e3) (foldl fold-recur init (list e1 e3 e3))]
 	  [(Apply f args) (foldl fold-recur init (cons f args))]
 	  [(Let x e body) (foldl fold-recur init (list e body))]
-	  [(Lambda `([,xs : ,ts] ...) rty body) (fold-expr f init body)] 
+	  [(Lambda `([,xs : ,ts] ...) body) (fold-expr f init body)] 
 	  [(SetBang v e)  (fold-expr f init e)]
 	  [(Begin es body) (foldl fold-recur init (cons body  es))]
 	  [(or (? atm?)) init])))
@@ -114,6 +114,9 @@
 
   (map-program-exp (uniqify-exp '()) p))
 
+(define (eta-abstract-prim p) p)
+
+(define (eta-abstract-top-func p) p)
 
 (define (hoist-complex-datum p)
   (define (convert d)

@@ -5,7 +5,7 @@ namespace FrontEndPass
 using namespace std;
 using namespace Parser;
 
-static const auto FrontEndAllPasses = {collectAssign};
+static const auto FrontEndAllPasses = {CollectAssign::run};
 
 Result<unique_ptr<Program>> parseProg(const Range& rg)
 {
@@ -27,6 +27,11 @@ Result<unique_ptr<Program>> parseProg(const Range& rg)
 	return prog(rg);
 }
 
+std::string gensym(const std::string& s)
+{
+	static int cnt = 0;
+	return s + std::to_string(cnt++);
+}
 
 void  runAllPass(Program& p)
 {

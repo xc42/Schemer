@@ -3,6 +3,7 @@
 #include "fmt/core.h"
 #include "value.h"
 #include "scheme.h"
+#include <sstream>
 #include <unordered_set>
 
 using namespace llvm;
@@ -11,7 +12,7 @@ using namespace std;
 
 void ExprCodeGen::forNumber(const NumberE& n)
 {
-	value_ = ConstantInt::getSigned(IntegerType::get(ctx_, 64), Scheme::toFixnumReps(n.value_)); //see scheme.h value tagging
+	value_ = getSchemeInt(n.value_);
 }
 
 void ExprCodeGen::forBoolean(const BooleanE& b)
@@ -22,10 +23,13 @@ void ExprCodeGen::forBoolean(const BooleanE& b)
 void ExprCodeGen::forVar(const Var& var)
 {
 	auto it = table_.find(var.v_);
-	if(it == table_.end()) 
-		throw std::runtime_error("undefined variable " + var.v_);
-
-	value_ = it->second;
+	if(it == table_.end()) {
+		auto pGlob = module_.getGlobalVariable(var.v_);
+		if(pGlob) { value_ = pGlob; }
+		else { throw std::runtime_error("undefined variable " + var.v_); }
+	}else {
+		value_ = it->second;
+	}
 }
 
 void ExprCodeGen::forQuote(const Quote& qo)
@@ -111,7 +115,56 @@ void ExprCodeGen::forLet(const Let& let)
 	let.body_->accept(*this);
 }
 
-void ExprCodeGen::forLambda(const Lambda&){}
+void ExprCodeGen::forLambda(const Lambda& lam)
+{
+	FreeVarScanner fvScanner;
+	lam.accept(fvScanner);
+	const auto& fvs = fvScanner.getFVs();
+	
+	//codegen for the lifted lambda function
+	string liftFnName = FrontEndPass::gensym("lambda");
+	vector<Type*> paramTys{lam.arity()+1, schemeValType}; //closure, param1, param2 ... param_n
+	auto fnType = FunctionType::get(schemeValType, paramTys, false);
+	auto lambdaFn = Function::Create(fnType, llvm::GlobalValue::InternalLinkage, liftFnName, &module_);
+
+	const auto& params = *lam.params_;
+	SymTable lamTable;
+	int i = 0;
+	for(auto it = lambdaFn->args().begin()+1; it != lambdaFn->args().end(); ++it) {
+		lamTable[params[i++]] = it;
+	}
+	auto closArg = lambdaFn->args().begin();
+
+	auto entryBB = BasicBlock::Create(ctx_, "entry", lambdaFn);
+	IRBuilder<> lambdaBuilder(ctx_);
+	lambdaBuilder.SetInsertPoint(entryBB);
+
+	if(!fvs.empty()) {
+		auto closAddr = lambdaBuilder.CreateAnd(closArg, ~static_cast<uint64_t>(Scheme::Mask::Closure));
+		auto closPtr = lambdaBuilder.CreateIntToPtr(closAddr, closureType_->getPointerTo());
+		auto fvsPtr = lambdaBuilder.CreateLoad(lambdaBuilder.CreateStructGEP(closureType_, closPtr, 2), "fvPtr");
+		int i = 0;
+		for(const auto& fv: fvs) { //TODO fix free variable
+			auto fvI = lambdaBuilder.CreateGEP(fvsPtr, llvmInt64(i), fmt::format("fv_{}", i));
+			lamTable[fv] = lambdaBuilder.CreateStore(table_.at(fv), fvI);
+			++i;
+		}
+	}
+	ExprCodeGen genforLambda(lambdaBuilder, module_, curCtx_, lamTable);
+	lam.body_->accept(genforLambda);
+	lambdaBuilder.CreateRet(genforLambda.getValue());
+
+	//codgen of closure
+	auto allocCloFunc = module_.getFunction("allocateClosure");
+	vector<Value*> args;
+	args.emplace_back( builder_.CreateBitCast(lambdaFn, Type::getInt8PtrTy(ctx_), "lambdaPtr"));
+	args.emplace_back(ConstantInt::getSigned(IntegerType::get(ctx_, 32), lam.arity()));
+	args.emplace_back(ConstantInt::getSigned(IntegerType::get(ctx_, 32), fvs.size()));
+	for(const auto& fv: fvs) {
+		args.emplace_back(table_.at(fv));
+	}
+	value_ = builder_.CreateCall(allocCloFunc, args, "clos");
+}
 
 void ExprCodeGen::forApply(const Apply& app)
 {
@@ -125,11 +178,13 @@ void ExprCodeGen::forApply(const Apply& app)
 	{\
 		checkArity(args.size(), 2);\
 		value_ = builder_.Create##INSTR(args[0], args[1]);\
+		return;\
 	}
 #define GenCmp(CMP) \
 	{\
 		checkArity(args.size(), 2);\
 		value_ = builder_.CreateCmp(CMP, args[0], args[1]);\
+		return;\
 	}
 		
 	if(app.operator_->type_ == Expr::Type::Var) {
@@ -159,12 +214,23 @@ void ExprCodeGen::forApply(const Apply& app)
 			if(func) {
 				checkArity(args.size(), func->arg_size());
 				value_ = builder_.CreateCall(func, args);
-			}else {
-				throw std::invalid_argument("could not find function: " + op);
+				return;
 			}
 		}
-	}else {
 	}
+
+	app.operator_->accept(*this);
+	//assert rator is closure value
+	auto rator = value_;
+	auto ratorAddr = builder_.CreateAnd(rator, ~static_cast<uint64_t>(Scheme::Mask::Closure));
+	auto closPtr = builder_.CreateIntToPtr(ratorAddr, closureType_->getPointerTo(), "rator");
+	auto code = builder_.CreateStructGEP(closureType_, closPtr, 1);
+	auto codeAddr = builder_.CreateLoad(code, "codeAddr");
+	auto funcType = FunctionType::get(schemeValType, {schemeValType}, true);
+	auto funcPtr = builder_.CreateBitCast(codeAddr, funcType->getPointerTo(), "codeFunc");
+
+	args.insert(args.begin(), rator);
+	value_ = builder_.CreateCall(funcType, funcPtr, args);
 }
 
 
@@ -178,15 +244,37 @@ void ProgramCodeGen::initializeGlobals()
 		{"make-vector", 2},
 		{"vector-ref", 2},
 		{"vector-length", 1},
-		{"vector-set!", 3}
+		{"vector-set!", 3},
 	};
 	
 	for(const auto& kv: builtinFunc) {
 		vector<Type*> paramTys;
 		paramTys.resize(kv.second, schemeValType);
 		auto funcTy = FunctionType::get(schemeValType, paramTys, false);
-		Function::Create(funcTy, llvm::GlobalObject::ExternalLinkage, kv.first, &module_);
+		//cout << simpleMangle(kv.first) << endl;
+		Function::Create(funcTy, llvm::GlobalObject::ExternalLinkage, simpleMangle(kv.first), &module_);
 	}
+
+	//struct Closure (see in scheme.h)
+	vector<Type*> elemts { Type::getInt32Ty(ctx_), Type::getInt8PtrTy(ctx_), Type::getInt64Ty(ctx_)};
+	StructType::create(ctx_, elemts, "Closure");
+	//allocateClosure
+	auto llvmcharPtrTy = Type::getInt8PtrTy(ctx_);
+	auto llvmInt32Ty = Type::getInt32Ty(ctx_);
+	auto fixParamTys = vector<Type*>{llvmcharPtrTy, llvmInt32Ty, llvmInt32Ty}; //arity, fvs
+	auto fnType = FunctionType::get(schemeValType, fixParamTys, true);
+	Function::Create(fnType, llvm::GlobalObject::ExternalLinkage, "allocateClosure", &module_);
+
+}
+
+std::string ProgramCodeGen::simpleMangle(const std::string& s)
+{
+	ostringstream oss;
+	for(char c: s) {
+		if( std::isdigit(c) || std::isalpha(c) || c == '_' ) oss << c;
+		else oss << '_' << static_cast<int>(c) << '_';
+	}
+	return oss.str();
 }
 
 void ProgramCodeGen::gen(FrontEndPass::Program& prog)

@@ -93,12 +93,12 @@ class CollectAssign: public DefaultRecur
 public:
     void forSetBang(const SetBang& setBang) override { assigned.insert(setBang.v_); }
 
-	static void run(Program& prog, PassContext& ctx) {
+	static void run(Program& prog) {
 		size_t i = 0;
 		for(auto& def: prog) {
 			CollectAssign collector;
 			def.first.body_->accept(collector);
-			ctx.assignedVars = std::move(collector.assigned);
+			def.second.assignedVars = std::move(collector.assigned);
 		}
 	}
 
@@ -106,36 +106,6 @@ private:
 	std::unordered_set<std::string> assigned;
 };
 
-class FreeVariable: public DefaultRecur
-{
-public:
-    virtual void forVar(const Var& v) override { freeVars_.insert(v.v_); };
-	virtual void forLet(const Let& let) override { 
-		let.body_->accept(*this);
-		for(const auto& kv: let.binds_) {
-			kv.second->accept(*this);
-			freeVars_.erase(kv.first.v_);
-		}
-	}
-    virtual void forLambda(const Lambda& lam) override {
-		lam.body_->accept(*this);
-		for(const auto& p: *lam.params_) {
-			freeVars_.erase(p.v_);
-		}
-	}
-
-	static void run(Program& prog, PassContext& ctx) {
-		size_t i = 0;
-		for(auto& def: prog) {
-			FreeVariable fv;
-			def.first.body_->accept(fv);
-			ctx.freeVars = std::move(fv.freeVars_);
-		}
-	}
-	
-private:
-	std::unordered_set<std::string> freeVars_;
-};
 
 //functions 
 using PassFunc = void(*)(Program&);
@@ -144,5 +114,6 @@ Parser::Result<std::unique_ptr<Program>> parseProg(const Parser::Range& rg);
 
 
 void  runAllPass(Program& p);
+std::string gensym(const std::string& s);
 
 }//namespace FrontEndPass

@@ -2,6 +2,7 @@
 #include "scheme.h"
 #include <iostream>
 #include <sstream>
+#include <cstdarg>
 
 using namespace std;
 
@@ -103,3 +104,20 @@ SchemeValTy make_vector(SchemeValTy, SchemeValTy){ return 0;}
 SchemeValTy vector_ref(SchemeValTy, SchemeValTy){ return 0;}
 SchemeValTy vector_length(SchemeValTy){ return 0;}
 SchemeValTy vector_set(SchemeValTy, SchemeValTy, SchemeValTy){ return 0;}
+
+SchemeValTy allocateClosure(char* code, int arity, int fvs, ...)
+{
+	auto clos = new Scheme::Closure;
+	clos->code = code;
+	clos->arity = arity;
+	clos->fvs = new SchemeValTy [fvs];
+
+	va_list vargs;
+	va_start(vargs, fvs);
+	for(int i = 0; i < fvs; ++i) {
+		clos->fvs[i] = va_arg(vargs, Scheme::ValueType);
+	}
+	va_end(vargs);
+
+	return TagSchemeVal(reinterpret_cast<SchemeValTy>(clos), Closure);
+}

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <unordered_set>
 
 namespace Scheme
 {
@@ -55,8 +56,9 @@ namespace Scheme
 
 	struct alignas(8) Closure
 	{
-		void *code;
-		std::vector<ValueType> args;
+		int arity;
+		char* code;
+		ValueType *fvs;
 	};
 
 	inline ValueType toFixnumReps(int64_t n) {
@@ -66,4 +68,14 @@ namespace Scheme
 	inline ValueType toBoolReps(bool b) {
 		return b? static_cast<ValueType>(Tag::True): static_cast<ValueType>(Tag::False);
 	}
+
+	static const std::unordered_set<std::string> primitives
+	{ 
+		"+", "-", "*", "/", 
+		">", ">=", "<", "<=",
+		"cons", "car", "cdr",
+		"vector", "make-vector", "vector-ref", "vector-set!", "vector-length"
+	};
+
+
 };
