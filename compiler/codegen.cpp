@@ -122,7 +122,7 @@ void ExprCodeGen::forLambda(const Lambda& lam)
 	const auto& fvs = fvScanner.getFVs();
 	
 	//codegen for the lifted lambda function
-	string liftFnName = FrontEndPass::gensym("lambda");
+	string liftFnName = FrontEndPass::gensym(fmt::format("{}_lambda", builder_.GetInsertBlock()->getParent()->getName()));
 	vector<Type*> paramTys{lam.arity()+1, schemeValType}; //closure, param1, param2 ... param_n
 	auto fnType = FunctionType::get(schemeValType, paramTys, false);
 	auto lambdaFn = Function::Create(fnType, llvm::GlobalValue::InternalLinkage, liftFnName, &module_);
@@ -146,7 +146,7 @@ void ExprCodeGen::forLambda(const Lambda& lam)
 		int i = 0;
 		for(const auto& fv: fvs) { //TODO fix free variable
 			auto fvI = lambdaBuilder.CreateGEP(fvsPtr, llvmInt64(i), fmt::format("fv_{}", i));
-			lamTable[fv] = lambdaBuilder.CreateStore(table_.at(fv), fvI);
+			lamTable[fv] = lambdaBuilder.CreateLoad(fvI);
 			++i;
 		}
 	}
@@ -256,7 +256,7 @@ void ProgramCodeGen::initializeGlobals()
 	}
 
 	//struct Closure (see in scheme.h)
-	vector<Type*> elemts { Type::getInt32Ty(ctx_), Type::getInt8PtrTy(ctx_), Type::getInt64Ty(ctx_)};
+	vector<Type*> elemts { Type::getInt32Ty(ctx_), Type::getInt8PtrTy(ctx_), Type::getInt64Ty(ctx_)->getPointerTo()};
 	StructType::create(ctx_, elemts, "Closure");
 	//allocateClosure
 	auto llvmcharPtrTy = Type::getInt8PtrTy(ctx_);
