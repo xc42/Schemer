@@ -72,7 +72,7 @@ namespace Scheme
 	static const std::unordered_set<std::string> primitives
 	{ 
 		"+", "-", "*", "/", 
-		">", ">=", "<", "<=",
+		">", ">=", "<", "<=", "=",
 		"cons", "car", "cdr",
 		"vector", "make-vector", "vector-ref", "vector-set!", "vector-length"
 	};

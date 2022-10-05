@@ -5,7 +5,7 @@
 #include <unordered_set>
 #include <vector>
 #include <list>
-#include <iostream>
+//#include <iostream>
 
 namespace FrontEndPass
 {
@@ -96,9 +96,9 @@ class CollectAssign: public DefaultRecur
 public:
     void forSetBang(const SetBang& setBang) override { 
 		auto res = assigned.insert(setBang.v_); 
-		if(res.second) {
-			std::cerr << "add assigned: " << setBang.v_.v_ << std::endl;
-		}
+		//if(res.second) {
+		//	std::cerr << "add assigned: " << setBang.v_.v_ << std::endl;
+		//}
 	}
 
 	static void run(Program& prog) {
