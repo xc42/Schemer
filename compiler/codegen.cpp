@@ -3,6 +3,7 @@
 #include "fmt/core.h"
 #include "value.h"
 #include "scheme.h"
+#include "runtime.h"
 #include <sstream>
 #include <unordered_set>
 
@@ -223,7 +224,7 @@ void ExprCodeGen::forApply(const Apply& app)
 		else if(op == "<=") 		GenCmp(CmpInst::Predicate::ICMP_SLE)
 		else if(op == "=")			GenCmp(CmpInst::Predicate::ICMP_EQ)
 		else {
-			auto func = module_.getFunction(op);
+			auto func = module_.getFunction(ProgramCodeGen::simpleMangle(op));
 			if(func) {
 				checkArity(args.size(), func->arg_size());
 				value_ = builder_.CreateCall(func, args);
@@ -249,18 +250,7 @@ void ExprCodeGen::forApply(const Apply& app)
 
 void ProgramCodeGen::initializeGlobals()
 {
-	static const map<string, int> builtinFunc = { 
-		{"display", 1},
-		{"cons", 2},
-		{"car", 1},
-		{"cdr", 1},
-		{"make-vector", 2},
-		{"vector-ref", 2},
-		{"vector-length", 1},
-		{"vector-set!", 3},
-	};
-	
-	for(const auto& kv: builtinFunc) {
+	for(const auto& kv: Runtime::builtinFunc) {
 		vector<Type*> paramTys;
 		paramTys.resize(kv.second, schemeValType);
 		auto funcTy = FunctionType::get(schemeValType, paramTys, false);
@@ -279,6 +269,7 @@ void ProgramCodeGen::initializeGlobals()
 	Function::Create(fnType, llvm::GlobalObject::ExternalLinkage, "allocateClosure", &module_);
 
 }
+
 
 std::string ProgramCodeGen::simpleMangle(const std::string& s)
 {
@@ -300,7 +291,7 @@ void ProgramCodeGen::gen(FrontEndPass::Program& prog)
 
 			vector<Type*> paramTys{lambda.arity(), schemeValType};
 			auto funcTy = FunctionType::get(schemeValType, paramTys, false);
-			auto func = Function::Create(funcTy, llvm::GlobalValue::ExternalLinkage, def.name_.v_, &module_);
+			auto func = Function::Create(funcTy, llvm::GlobalValue::ExternalLinkage, simpleMangle(def.name_.v_), &module_);
 
 			auto entryBB = BasicBlock::Create(ctx_, "entry", func);
 			builder_.SetInsertPoint(entryBB);

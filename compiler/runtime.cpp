@@ -9,7 +9,9 @@ using namespace std;
 #define IsSchemeType(val, Ty) (((val) & static_cast<unsigned>(Scheme::Mask::Ty)) == static_cast<unsigned>(Scheme::Tag::Ty))
 #define TagSchemeVal(val, Ty) ((val) | static_cast<unsigned>(Scheme::Tag::Ty))
 
-#define ToConsPtr(val) reinterpret_cast<Scheme::Cons*>(val & ~static_cast<SchemeValTy>(Scheme::Mask::Pair))
+#define ToConsPtr(val) reinterpret_cast<Scheme::Cons*>((val) & ~static_cast<SchemeValTy>(Scheme::Mask::Pair))
+
+#define ToVecPtr(val) reinterpret_cast<Scheme::Vec*>((val) & ~static_cast<SchemeValTy>(Scheme::Mask::Vector))
 
 static ostream& ToString(ostream& os, SchemeValTy val)
 {
@@ -43,7 +45,19 @@ static ostream& ToString(ostream& os, SchemeValTy val)
 			break;
 		}
 		 //Vector
-		case 0b010: { os << "TODO" ; break;}
+		case 0b010: 
+		{ 
+			auto v = ToVecPtr(val);
+			auto len = v->len;
+			os << "#(";
+			for(int i = 0; i < len - 1; ++i) {
+				ToString(os, v->arr[i]);
+				os << ' ';
+			}
+			if(len >= 1) ToString(os, v->arr[len-1]);
+			os << ")";
+			break;
+		}
 		//closure
 		case 0b011: { os << "#<procedure>"; break;}
 		//box
@@ -100,10 +114,33 @@ SchemeValTy cdr(SchemeValTy pr)
 	return addr->cdr;
 }
 
-SchemeValTy make_vector(SchemeValTy, SchemeValTy){ return 0;}
-SchemeValTy vector_ref(SchemeValTy, SchemeValTy){ return 0;}
-SchemeValTy vector_length(SchemeValTy){ return 0;}
-SchemeValTy vector_set(SchemeValTy, SchemeValTy, SchemeValTy){ return 0;}
+SchemeValTy  make_45_vector(SchemeValTy len, SchemeValTy val)
+{
+	auto v = new Scheme::Vec;
+	v->len = len >> 3;
+	v->arr = new SchemeValTy [v->len];
+	std::fill(v->arr, v->arr + v->len, val);
+	return TagSchemeVal(reinterpret_cast<SchemeValTy>(v), Vector);
+}
+
+SchemeValTy  vector_45_ref(SchemeValTy v, SchemeValTy idx)
+{
+	auto vp = ToVecPtr(v);
+	return vp->arr[idx];
+}
+
+SchemeValTy vector_45_length(SchemeValTy v)
+{ 
+	auto vp = ToVecPtr(v);
+	return Scheme::toFixnumReps(vp->len);
+}
+
+SchemeValTy vector_45_set_33_(SchemeValTy v, SchemeValTy idx, SchemeValTy val)
+{ 
+	auto vp = ToVecPtr(v);
+	vp->arr[idx] = val;
+	return static_cast<SchemeValTy>(Scheme::Tag::Void);
+}
 
 SchemeValTy allocateClosure(char* code, int arity, int fvs, ...)
 {
@@ -120,4 +157,10 @@ SchemeValTy allocateClosure(char* code, int arity, int fvs, ...)
 	va_end(vargs);
 
 	return TagSchemeVal(reinterpret_cast<SchemeValTy>(clos), Closure);
+}
+
+namespace Runtime
+{
+
+
 }
