@@ -28,7 +28,11 @@ void ExprCodeGen::forVar(const Var& var)
 		if(pGlob) { value_ = pGlob; }
 		else { throw std::runtime_error("undefined variable " + var.v_); }
 	}else {
-		value_ = it->second;
+		if(curCtx_.isAssigned(var.v_)) {
+			value_ = builder_.CreateLoad(it->second, fmt::format("deref_{}", var.v_));
+		} else {
+			value_ = it->second;
+		}
 	}
 }
 
@@ -62,7 +66,9 @@ void ExprCodeGen::forQuote(const Quote& qo)
 
 void ExprCodeGen::forSetBang(const SetBang& setBang)
 {
-
+	setBang.e_->accept(*this);
+	builder_.CreateStore(value_, table_.at(setBang.v_.v_));
+	value_ = ConstantInt::getSigned(IntegerType::get(ctx_, 64), static_cast<int64_t>(Scheme::Tag::Void));
 }
 
 void ExprCodeGen::forBegin(const Begin& bgn)
@@ -110,7 +116,14 @@ void ExprCodeGen::forLet(const Let& let)
 {
 	for(auto& kv: let.binds_) {
 		kv.second->accept(*this);
-		table_[kv.first] = value_;
+
+		if(curCtx_.isAssigned(kv.first.v_)) {
+			auto varAddr = builder_.CreateAlloca(schemeValType, nullptr, fmt::format("alloc_{}", kv.first.v_));
+			builder_.CreateStore(value_, varAddr);
+			table_[kv.first] = varAddr;
+		}else {
+			table_[kv.first] = value_;
+		}
 	}
 	let.body_->accept(*this);
 }
@@ -297,7 +310,13 @@ void ProgramCodeGen::gen(FrontEndPass::Program& prog)
 			const auto& params = *lambda.params_;
 			int i = 0;
 			for(auto it = args.begin(); it != args.end(); ++it, ++i) {
-				table[params[i]] = it;
+				if(passCtx.assignedVars.count(params[i]) == 0) { //如果一个变量会被赋值，则为其分配内存，后续llvm的mem2reg会处理为SSA
+					table[params[i]] = it;
+				}else {
+					auto alloc = builder_.CreateAlloca(schemeValType, nullptr, fmt::format("allca_{}" ,params[i].v_));
+					table[params[i]] = alloc;
+					builder_.CreateStore(it, alloc);
+				}
 			}
 
 			ExprCodeGen exprGen(builder_, module_, passCtx, table);

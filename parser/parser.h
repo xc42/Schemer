@@ -199,6 +199,8 @@ Result<std::unique_ptr<NumberE>> parseNumber(const Range&);
 Result<std::unique_ptr<Var>> parseVar(const Range&);
 Result<std::unique_ptr<Quote>> parseQuote(const Range&);
 Result<std::unique_ptr<Define>>  parseDef(const Range&);
+Result<std::unique_ptr<SetBang>>  parseSetBang(const Range&);
+Result<std::unique_ptr<Begin>>  parseBegin(const Range&);
 Result<std::unique_ptr<If>>  parseIf(const Range&);
 Result<std::unique_ptr<Let>>  parseLet(const Range&);
 Result<std::unique_ptr<Lambda>>  parseLambda(const Range&);

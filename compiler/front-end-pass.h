@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <vector>
 #include <list>
+#include <iostream>
 
 namespace FrontEndPass
 {
@@ -67,6 +68,8 @@ struct FoldExpr : public VisitorE
 //store some info/data through some passes
 struct PassContext
 {
+	bool isAssigned(const std::string& v) { return assignedVars.count(v); }
+
 	std::unordered_set<std::string> assignedVars; //result from CollectAssign
 	std::unordered_set<std::string> freeVars; //result from  FreeVariable
 };
@@ -91,7 +94,12 @@ private:
 class CollectAssign: public DefaultRecur
 {
 public:
-    void forSetBang(const SetBang& setBang) override { assigned.insert(setBang.v_); }
+    void forSetBang(const SetBang& setBang) override { 
+		auto res = assigned.insert(setBang.v_); 
+		if(res.second) {
+			std::cerr << "add assigned: " << setBang.v_.v_ << std::endl;
+		}
+	}
 
 	static void run(Program& prog) {
 		size_t i = 0;

@@ -22,7 +22,7 @@ static ostream& ToString(ostream& os, SchemeValTy val)
 		case 0b001: //Pair
 		{
 			auto cons = ToConsPtr(val);
-			os << "(";
+			os << "'(";
 			ToString(os, cons->car);
 
 			auto it = cons->cdr;

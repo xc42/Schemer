@@ -22,8 +22,16 @@ std::vector<std::string> tokenize(const char *c)
 			case '(':
 				tokens.push_back(std::string(1, *c++));
 				break;
+			case '[':
+				tokens.push_back(std::string(1, '(')); //简单处理方括号
+				c++;
+				break;
 			case ')':
 				tokens.push_back(std::string(1, *c++));
+				break;
+			case ']':
+				tokens.push_back(std::string(1, ']'));
+				c++;
 				break;
 			case '.':
 				tokens.push_back(std::string(1, *c++));
@@ -60,7 +68,9 @@ Result<Expr::Ptr> parse(const Range& rg)
 		return parseQuote(rg);
 	}
 	else if(peek == "(") {
-		return  Choose<Expr::Ptr>::OneOf(rg, parseDef, parseQuote, parseLet, parseLambda, parseIf, parseApply);
+		return  Choose<Expr::Ptr>::OneOf(rg, 
+				parseDef, parseQuote, parseLet, parseLambda, parseIf, 
+				parseSetBang, parseBegin, parseApply);
 	}
 	else {
 		return parseVar(rg);
@@ -141,6 +151,31 @@ Result<std::unique_ptr<Define>>  parseDef(const Range& rg)
 		};
 
 	static auto P = Choose<unique_ptr<Define>>::OneOf(def1, def2);
+	return P(rg);
+}
+
+Result<std::unique_ptr<SetBang>>  parseSetBang(const Range& rg)
+{
+	static auto setKw = Lit("set!");
+	static auto P = All(Common::lP, setKw, parseVar, parse, Common::rP) >> 
+	[](unique_ptr<Var>&& var, unique_ptr<Expr>&& expr)
+	{
+		return make_unique<SetBang>(std::move(*var), std::move(expr));
+	};
+
+	return P(rg);
+}
+
+Result<std::unique_ptr<Begin>>  parseBegin(const Range& rg)
+{
+	static auto beginKw = Lit("begin");
+	static auto manyExp = MaybeMany(parse);
+	static auto P = All(Common::lP, beginKw, manyExp, Common::rP) >>
+		[](vector<unique_ptr<Expr>> &&es)
+		{
+			return make_unique<Begin>(std::move(es));
+		};
+
 	return P(rg);
 }
 
