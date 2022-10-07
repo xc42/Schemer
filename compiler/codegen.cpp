@@ -212,11 +212,13 @@ void ExprCodeGen::forApply(const Apply& app)
 			auto n2 = builder_.CreateAShr(args[1], 3, "ft2");
 			auto mulTmp = builder_.CreateMul(n1, n2, "mulTmp");
 			value_ = builder_.CreateShl(mulTmp, 3, "mulAns");
+			return;
 		}
 		else if(op == "/") {
 			checkArity(args.size(), 2);
 			auto div = builder_.CreateSDiv(args[0], args[1], "divTmp");
 			value_ = builder_.CreateShl(div, 3, "divAns");
+			return;
 		}
 		else if(op == ">") 			GenCmp(CmpInst::Predicate::ICMP_SGT)
 		else if(op == ">=") 		GenCmp(CmpInst::Predicate::ICMP_SGE)
@@ -233,6 +235,7 @@ void ExprCodeGen::forApply(const Apply& app)
 		}
 	}
 
+	//not a var
 	app.operator_->accept(*this);
 	//assert rator is closure value
 	auto rator = value_;

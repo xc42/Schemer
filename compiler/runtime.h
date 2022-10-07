@@ -12,6 +12,10 @@ extern "C"
 	SchemeValTy cdr(SchemeValTy);
 
 	// the '-' are "mangled", see ProgramCodeGen::simpleMangle
+	
+	SchemeValTy box(SchemeValTy);
+	SchemeValTy unbox(SchemeValTy);
+	SchemeValTy set_45_box_33_(SchemeValTy,SchemeValTy);
 	SchemeValTy make_45_vector(SchemeValTy, SchemeValTy);
 	SchemeValTy vector_45_ref(SchemeValTy, SchemeValTy);
 	SchemeValTy vector_45_length(SchemeValTy);
@@ -31,6 +35,9 @@ static const std::unordered_map<std::string, int> builtinFunc =
 	{"cons", 2},
 	{"car", 1},
 	{"cdr", 1},
+	{"box", 1},
+	{"unbox", 1},
+	{"set-box!", 2},
 	{"make-vector", 2},
 	{"vector-ref", 2},
 	{"vector-length", 1},

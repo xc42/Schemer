@@ -12,6 +12,7 @@ using namespace std;
 #define ToConsPtr(val) reinterpret_cast<Scheme::Cons*>((val) & ~static_cast<SchemeValTy>(Scheme::Mask::Pair))
 
 #define ToVecPtr(val) reinterpret_cast<Scheme::Vec*>((val) & ~static_cast<SchemeValTy>(Scheme::Mask::Vector))
+#define ToBoxPtr(val) reinterpret_cast<Scheme::Box*>((val) & ~static_cast<SchemeValTy>(Scheme::Mask::Box))
 
 static ostream& ToString(ostream& os, SchemeValTy val)
 {
@@ -49,7 +50,7 @@ static ostream& ToString(ostream& os, SchemeValTy val)
 		{ 
 			auto v = ToVecPtr(val);
 			auto len = v->len;
-			os << "#(";
+			os << "'#(";
 			for(int i = 0; i < len - 1; ++i) {
 				ToString(os, v->arr[i]);
 				os << ' ';
@@ -61,7 +62,13 @@ static ostream& ToString(ostream& os, SchemeValTy val)
 		//closure
 		case 0b011: { os << "#<procedure>"; break;}
 		//box
-		case 0b100: { os << "TODO" ; break;}
+		case 0b100:
+		{ 
+			os << "'#&";
+			auto p = ToBoxPtr(val);
+			ToString(os, p->val);
+			break;
+		}
 		//various subtype
 		case 0b101:
 		{
@@ -112,6 +119,26 @@ SchemeValTy cdr(SchemeValTy pr)
 {
 	auto addr = ToConsPtr(pr);
 	return addr->cdr;
+}
+
+SchemeValTy box(SchemeValTy val)
+{
+	auto b = new Scheme::Box;
+	b->val = val;
+	return TagSchemeVal(reinterpret_cast<SchemeValTy>(b), Box);
+}
+
+SchemeValTy unbox(SchemeValTy b)
+{
+	auto p = ToBoxPtr(b);
+	return p->val;
+}
+
+SchemeValTy set_45_box_33_(SchemeValTy b, SchemeValTy val)
+{
+	auto p = ToBoxPtr(b);
+	p->val = val;
+	return static_cast<SchemeValTy>(Scheme::Tag::Void);
 }
 
 SchemeValTy  make_45_vector(SchemeValTy len, SchemeValTy val)

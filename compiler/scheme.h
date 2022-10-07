@@ -49,6 +49,11 @@ namespace Scheme
 		ValueType   *arr;
 	};
 
+	struct alignas(8) Box
+	{
+		ValueType val;
+	};
+
 	struct alignas(8) Sym
 	{
 		const char* s;
@@ -74,6 +79,7 @@ namespace Scheme
 		"+", "-", "*", "/", 
 		">", ">=", "<", "<=", "=",
 		"cons", "car", "cdr",
+		"box", "unbox", "box-set!",
 		"vector", "make-vector", "vector-ref", "vector-set!", "vector-length"
 	};
 
