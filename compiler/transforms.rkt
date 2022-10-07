@@ -88,7 +88,7 @@
 	  [(If e1 e2 e3) (foldl fold-recur init (list e1 e3 e3))]
 	  [(Apply f args) (foldl fold-recur init (cons f args))]
 	  [(Let x e body) (foldl fold-recur init (list e body))]
-	  [(Lambda `([,xs : ,ts] ...) body) (fold-expr f init body)] 
+	  [(Lambda ps body) (fold-expr f init body)]
 	  [(SetBang v e)  (fold-expr f init e)]
 	  [(Begin es body) (foldl fold-recur init (cons body  es))]
 	  [(or (? atm?)) init])))
@@ -114,9 +114,34 @@
 
   (map-program-exp (uniqify-exp '()) p))
 
-(define (eta-abstract-prim p) p)
+(define (eta-abstract-prim p) 
+  (define prims
+	(make-hash 
+	  '((+ . 2) (- . 2) (* . 2) (/ . 2) (> . 2) (>= . 2) (< . 2) (<= . 2) (= . 2)
+		(cons . 2) (car . 1) (cdr . 1)
+		(make-vector . 2) (vector-set! . 3) (vector-ref . 2) (vector-length . 1)
+		(box . 1) (unbox . 1))))
 
-(define (eta-abstract-top-func p) p)
+	(map-program-exp (eta-abstract-expr prims) p))
+
+(define (eta-abstract-top-func p)
+  (define top-func (for/hash ([d (Program-def* p)]
+							  #:when (Lambda? (Def-body d)))
+					 (values (Def-name d) (length (Lambda-param* (Def-body))))))
+
+  (map-program-exp (eta-abstract-expr top-func) p))
+
+(define ((eta-abstract-expr name-arity) expr)
+  (define (recur e) (eta-abstract-expr name-arity))
+  (match expr
+	[(Var v)
+	 (let ([kv (hash-ref name-arity v)])
+	   (if kv 
+		 (let ([ps (build-list (cdr kv) (lambda (n) (gensym 'x)))]) 
+		   (Lambda ps (Apply (Var v) ps)))
+		 expr))]
+	[(Apply (Var v) es) (Apply (Var v) (map recur es))]
+	[_ (fmap-expr recur expr)]))
 
 (define (hoist-complex-datum p)
   (define (convert d)
@@ -126,10 +151,7 @@
 
   (define (convert-expr e callback)
 	(match e
-	  [(Datum dat) 
-	   (cond
-		 [(pair? dat) (callback (convert dat))]
-		 [else acc])]
+	  [(Quote dat) (callback (convert dat))]
 	  [else (fmap-expr convert-expr e)]))
 
   (let* ([collected (make-hash)]
@@ -145,20 +167,94 @@
 							   (values (Def v (Int 0))
 									   (SetBang v d)))])
 	  (Program (append datum-defs (Program-def* p^))
-			   (Begin datum-defs (Program-body p^)))))))
+			   (Begin datum-inits (Program-body p^)))))))
 
-(define (assignment-conversion p) p)
+(define (opt-direct-call p)
+  (define (opt-expr expr)
+	(match expr
+	  [(Apply (Lambda ps body) es)
+	   (for/fold ([body^ body])
+		 ([p ps]
+		  [e es])
+		 (Let p e body^))]
+	  [_ (fmap-expr opt-expr expr)]))
+
+  (map-program-exp opt-expr expr))
+
+(define (opt-known-call p)
+  (define ((opt-expr env) expr)
+	(match expr
+	  [(Let v (and lam (Lambda ps body)) body)
+	   (Let v lam ((opt-expr (cons (cons v lam) env)) body))]
+	  [(Apply (Var v) es)
+	   (cond
+		 [(dict-ref env v #f)
+		  => (lambda (lam)
+			   (for/fold ([e^ (Lambda-body lam)])
+				 ([p (Lambda-param* lam)]
+				  [e es])
+				 (Let p e e^)))]
+		 [else expr])]
+	  [_ (fmap-expr (opt-expr env) expr)]))
+  (map-program-exp opt-expr p))
+
+(define (assignment-conversion p)
+  (define (scan-assigned-captured expr)
+	(match expr
+	  [(SetBang v e) 
+	   (let ([ass-cap (scan-assigned-captured e)])
+		 (cons (set-add (car ass-cap) v) 
+			   (cdr ass-cap)))]
+	  [(Lambda ps body)
+	   (let ([ass-cap (scan-assigned-captured body)])
+		 (cons (car ass-cap) (set-subtract (cdr ass-cap) (apply set ps))))]
+	  [(Let v e body)
+	   expr] ;;TODO
+	  [_ (fold-expr 
+		   (lambda (e acc)
+			 (match-let ([(cons ass cap) (scan-assigned-captured e)]
+						 [(cons acc-ass acc-cap) acc])
+			   (cons (set-union ass acc-ass)
+					 (set-union cap acc-cap))))
+		   (cons (set) (set))
+		   expr)]))
+
+
+  (define (conv-recur expr)
+	(let* ([assign-cap (scan-assigned-captured expr)]
+		   [box-it? (lambda (v) 
+					  (and (set-member? (car assign-cap) v) 
+						   (set-member? (cdr assign-cap) v)))])
+	  (match expr
+		[(Var v) (if (box-it? v) (Apply (Var 'unbox) (list expr)) expr)]
+		[(Let v e body) 
+		 (let ([e^ (if (box-it? v) 
+					 (Apply (Var 'box) (conv-recur e)) 
+					 (conv-recur e))])
+		   (Let v e^ (conv-recur body)))]
+		[(SetBang v e) 
+		 (if (box-it? v)
+		   (Apply (Var 'box-set!) (list (Var v) (conv-recur e)))
+		   (SetBang v (conv-recur e)))]
+		[_ (fmap conv-recur e)])))
+
+  (map-program-exp conv-recur p))
 
 
 (define passes
   (list 
-	uniqify-exp
+	uniqify
+	eta-abstract-prim 
+	eta-abstract-top-func 
 	hoist-complex-datum
-	assignment-conversion))
+	opt-direct-call
+	opt-known-call
+	assignment-conversion
+	))
 
 (define (write-program p)
   (for ([d (Program-def* p)])
-	   (write `(define ,(Def-name d) ,(unparse (Def-body d)))))
-  (write (unparse (Program-body p))))
+	   (write `(define ,(Def-name d) ,(unparse-exp (Def-body d)))))
+  (write (unparse-exp (Program-body p))))
 
 
