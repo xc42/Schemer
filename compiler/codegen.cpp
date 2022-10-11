@@ -18,22 +18,22 @@ void ExprCodeGen::forNumber(const NumberE& n)
 
 void ExprCodeGen::forBoolean(const BooleanE& b)
 {
-	value_ = ConstantInt::getSigned(IntegerType::get(ctx_, 1), Scheme::toBoolReps(b.b_));
+	value_ = ConstantInt::getSigned(IntegerType::get(ctx_, 64), Scheme::toBoolReps(b.b_));
 }
 
 void ExprCodeGen::forVar(const Var& var)
 {
 	auto it = table_.find(var.v_);
 	if(it == table_.end()) {
-		auto pGlob = module_.getGlobalVariable(var.v_);
+		auto pGlob = module_.getNamedGlobal(var.v_);
 		if(pGlob) { 
-			value_ = builder_.CreateLoad(pGlob, "deref_"+var.v_); 
+			value_ = builder_.CreateLoad(pGlob->getValueType(), pGlob, "deref_"+var.v_); 
 		} else { 
 			throw std::runtime_error("undefined variable " + var.v_); 
 		}
 	}else {
 		if(curCtx_.isAssigned(var.v_)) {
-			value_ = builder_.CreateLoad(it->second, fmt::format("deref_{}", var.v_));
+			value_ = builder_.CreateLoad(it->second->getType()->getPointerElementType(), it->second, fmt::format("deref_{}", var.v_));
 		} else {
 			value_ = it->second;
 		}
@@ -77,7 +77,7 @@ void ExprCodeGen::forSetBang(const SetBang& setBang)
 	if(it != table_.end()) {
 		var = it->second;
 	}else {
-		var = module_.getGlobalVariable(setBang.v_.v_);
+		var = module_.getNamedGlobal(setBang.v_.v_);
 	}
 
 	builder_.CreateStore(value_, var);
@@ -94,7 +94,13 @@ void ExprCodeGen::forBegin(const Begin& bgn)
 void ExprCodeGen::forIf(const If& ifExp)
 {
 	ifExp.pred_->accept(*this);
-	auto condV = value_;
+
+	Value* condV = nullptr;
+	if(value_->getType()->getIntegerBitWidth() == 1) {
+		condV = value_;
+	}else { //assert schemeValType
+		condV = builder_.CreateICmpNE(value_, ConstantInt::getSigned(schemeValType, Scheme::toBoolReps(false)));
+	}
 
 	auto curFunc = builder_.GetInsertBlock()->getParent();
 	auto thnBB = BasicBlock::Create(ctx_, "thn", curFunc);
@@ -117,7 +123,7 @@ void ExprCodeGen::forIf(const If& ifExp)
 
 	//curFunc->getBasicBlockList().push_back(contBB);
 	builder_.SetInsertPoint(contBB);
-	auto phiV = builder_.CreatePHI(thnV->getType(), 2, "if-phi");
+	auto phiV = builder_.CreatePHI(schemeValType, 2, "if-phi");
 
 	phiV->addIncoming(thnV, thnBB);
 	phiV->addIncoming(elsV, elsBB);
@@ -151,7 +157,7 @@ void ExprCodeGen::forLambda(const Lambda& lam)
 	string liftFnName = FrontEndPass::gensym(fmt::format("{}_lambda", builder_.GetInsertBlock()->getParent()->getName()));
 	vector<Type*> paramTys{lam.arity()+1, schemeValType}; //closure, param1, param2 ... param_n
 	auto fnType = FunctionType::get(schemeValType, paramTys, false);
-	auto lambdaFn = Function::Create(fnType, llvm::GlobalValue::InternalLinkage, liftFnName, &module_);
+	auto lambdaFn = Function::Create(fnType, llvm::GlobalValue::ExternalLinkage, liftFnName, &module_);
 
 	const auto& params = *lam.params_;
 	SymTable lamTable;
@@ -168,11 +174,12 @@ void ExprCodeGen::forLambda(const Lambda& lam)
 	if(!fvs.empty()) {
 		auto closAddr = lambdaBuilder.CreateAnd(closArg, ~static_cast<uint64_t>(Scheme::Mask::Closure));
 		auto closPtr = lambdaBuilder.CreateIntToPtr(closAddr, closureType_->getPointerTo());
-		auto fvsPtr = lambdaBuilder.CreateLoad(lambdaBuilder.CreateStructGEP(closureType_, closPtr, 2), "fvPtr");
+		auto fvField = lambdaBuilder.CreateStructGEP(closureType_, closPtr, 2);
+		auto fvsPtr = lambdaBuilder.CreateLoad(fvField->getType()->getPointerElementType(), fvField, "fvPtr");
 		int i = 0;
 		for(const auto& fv: fvs) { 
-			auto fvI = lambdaBuilder.CreateGEP(fvsPtr, llvmInt64(i), fmt::format("fv_{}", i));
-			lamTable[fv] = curCtx_.isAssigned(fv)? fvI: lambdaBuilder.CreateLoad(fvI);
+			auto fvI = lambdaBuilder.CreateGEP(fvsPtr->getType()->getPointerElementType(), fvsPtr, llvmInt64(i), fmt::format("fv_{}", i));
+			lamTable[fv] = curCtx_.isAssigned(fv)? fvI: lambdaBuilder.CreateLoad(fvI->getType()->getPointerElementType(), fvI);
 			++i;
 		}
 	}
@@ -255,7 +262,7 @@ void ExprCodeGen::forApply(const Apply& app)
 	auto ratorAddr = builder_.CreateAnd(rator, ~static_cast<uint64_t>(Scheme::Mask::Closure));
 	auto closPtr = builder_.CreateIntToPtr(ratorAddr, closureType_->getPointerTo(), "rator");
 	auto code = builder_.CreateStructGEP(closureType_, closPtr, 1);
-	auto codeAddr = builder_.CreateLoad(code, "codeAddr");
+	auto codeAddr = builder_.CreateLoad(code->getType()->getPointerElementType(), code, "codeAddr");
 	auto funcType = FunctionType::get(schemeValType, {schemeValType}, true);
 	auto funcPtr = builder_.CreateBitCast(codeAddr, funcType->getPointerTo(), "codeFunc");
 
@@ -333,7 +340,12 @@ void ProgramCodeGen::gen(FrontEndPass::Program& prog)
 			verifyFunction(*func, &llvm::errs());
 
 		}else if(def.body_->type_ == Expr::Type::Number) {
-			new GlobalVariable(module_, schemeValType, false, llvm::GlobalValue::InternalLinkage, nullptr, def.name_.v_);
+			//new GlobalVariable(module_, schemeValType, false, llvm::GlobalValue::InternalLinkage, nullptr, def.name_.v_);
+			module_.getOrInsertGlobal(def.name_.v_, schemeValType);
+			auto glob = module_.getNamedGlobal(def.name_.v_);
+			glob->setLinkage(llvm::GlobalValue::InternalLinkage);
+			glob->setInitializer(ConstantInt::getSigned(schemeValType, Scheme::toFixnumReps(static_cast<NumberE&>(*def.body_).value_)));
+
 		}else {
 			throw std::runtime_error("unsupported complex global construct, maybe there's bug in racket frontend pass"); 
 		}
