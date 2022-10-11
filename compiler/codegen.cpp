@@ -26,8 +26,11 @@ void ExprCodeGen::forVar(const Var& var)
 	auto it = table_.find(var.v_);
 	if(it == table_.end()) {
 		auto pGlob = module_.getGlobalVariable(var.v_);
-		if(pGlob) { value_ = pGlob; }
-		else { throw std::runtime_error("undefined variable " + var.v_); }
+		if(pGlob) { 
+			value_ = builder_.CreateLoad(pGlob, "deref_"+var.v_); 
+		} else { 
+			throw std::runtime_error("undefined variable " + var.v_); 
+		}
 	}else {
 		if(curCtx_.isAssigned(var.v_)) {
 			value_ = builder_.CreateLoad(it->second, fmt::format("deref_{}", var.v_));
@@ -68,7 +71,16 @@ void ExprCodeGen::forQuote(const Quote& qo)
 void ExprCodeGen::forSetBang(const SetBang& setBang)
 {
 	setBang.e_->accept(*this);
-	builder_.CreateStore(value_, table_.at(setBang.v_.v_));
+
+	Value* var = nullptr;
+	auto it = table_.find(setBang.v_.v_);
+	if(it != table_.end()) {
+		var = it->second;
+	}else {
+		var = module_.getGlobalVariable(setBang.v_.v_);
+	}
+
+	builder_.CreateStore(value_, var);
 	value_ = ConstantInt::getSigned(IntegerType::get(ctx_, 64), static_cast<int64_t>(Scheme::Tag::Void));
 }
 
@@ -158,12 +170,13 @@ void ExprCodeGen::forLambda(const Lambda& lam)
 		auto closPtr = lambdaBuilder.CreateIntToPtr(closAddr, closureType_->getPointerTo());
 		auto fvsPtr = lambdaBuilder.CreateLoad(lambdaBuilder.CreateStructGEP(closureType_, closPtr, 2), "fvPtr");
 		int i = 0;
-		for(const auto& fv: fvs) { //TODO fix free variable
+		for(const auto& fv: fvs) { 
 			auto fvI = lambdaBuilder.CreateGEP(fvsPtr, llvmInt64(i), fmt::format("fv_{}", i));
-			lamTable[fv] = lambdaBuilder.CreateLoad(fvI);
+			lamTable[fv] = curCtx_.isAssigned(fv)? fvI: lambdaBuilder.CreateLoad(fvI);
 			++i;
 		}
 	}
+
 	ExprCodeGen genforLambda(lambdaBuilder, module_, curCtx_, lamTable);
 	lam.body_->accept(genforLambda);
 	lambdaBuilder.CreateRet(genforLambda.getValue());
@@ -319,10 +332,11 @@ void ProgramCodeGen::gen(FrontEndPass::Program& prog)
 
 			verifyFunction(*func, &llvm::errs());
 
+		}else if(def.body_->type_ == Expr::Type::Number) {
+			new GlobalVariable(module_, schemeValType, false, llvm::GlobalValue::InternalLinkage, nullptr, def.name_.v_);
 		}else {
-			throw std::runtime_error("unimpl");
+			throw std::runtime_error("unsupported complex global construct, maybe there's bug in racket frontend pass"); 
 		}
-
 	}
 
 	verifyModule(module_, &llvm::errs());

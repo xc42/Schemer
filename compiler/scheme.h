@@ -32,6 +32,8 @@ namespace Scheme
 		Box 		= 0b111,
 		Symbol		= 0b111,
 		Bool		= 0b11111,
+		True		= 0b111111,
+		False		= 0b111111,
 		Nil			= 0b11111,
 		Void		= 0b11111
 	};

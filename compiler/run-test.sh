@@ -10,7 +10,7 @@ succ=0
 for testFile in tests/*; do
 	((total=total+1))
 	prog=`basename $testFile`.out
-	clang++ -L$output_path -lruntime -x assembler -o $prog <($compiler < $testFile|llc-12)
+	clang++ -L$output_path -lruntime -x assembler -o $prog <(./transforms.rkt < $testFile|$compiler|llc-12)
 	myoutput=$(./$prog)
 	stdoutput=`racket -e "$(<$testFile)"`
 	if [ $myoutput = $stdoutput ]; then
