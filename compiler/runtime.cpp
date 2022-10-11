@@ -186,6 +186,26 @@ SchemeValTy allocateClosure(char* code, int arity, int fvs, ...)
 	return TagSchemeVal(reinterpret_cast<SchemeValTy>(clos), Closure);
 }
 
+SchemeValTy null_63_(SchemeValTy val)
+{
+	return Scheme::toBoolReps((val & static_cast<SchemeValTy>(Scheme::Mask::Nil)) == static_cast<SchemeValTy>(Scheme::Tag::Nil));
+}
+
+SchemeValTy pair_63_(SchemeValTy val)
+{
+	return Scheme::toBoolReps((val & static_cast<SchemeValTy>(Scheme::Mask::Pair)) == static_cast<SchemeValTy>(Scheme::Tag::Pair));
+}
+
+SchemeValTy symbol_63_(SchemeValTy val)
+{
+	return Scheme::toBoolReps((val & static_cast<SchemeValTy>(Scheme::Mask::Symbol)) == static_cast<SchemeValTy>(Scheme::Tag::Symbol));
+}
+
+SchemeValTy number_63_(SchemeValTy val)
+{
+	return Scheme::toBoolReps((val & static_cast<SchemeValTy>(Scheme::Mask::Fixnum)) == static_cast<SchemeValTy>(Scheme::Tag::Fixnum));
+}
+
 namespace Runtime
 {
 

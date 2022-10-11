@@ -22,6 +22,11 @@ extern "C"
 
 	SchemeValTy vector_45_set_33_(SchemeValTy, SchemeValTy, SchemeValTy);
 
+	SchemeValTy null_63_(SchemeValTy);
+	SchemeValTy pair_63_(SchemeValTy);
+	SchemeValTy symbol_63_(SchemeValTy);
+	SchemeValTy number_63_(SchemeValTy);
+
 	SchemeValTy allocateClosure(char* code, int arity, int fvs, ...);
 }
 
@@ -42,6 +47,7 @@ static const std::unordered_map<std::string, int> builtinFunc =
 	{"vector-ref", 2},
 	{"vector-length", 1},
 	{"vector-set!", 3},
+	{"null?", 1}, {"pair?", 1},{"symbol?", 1}, {"number?", 1}
 };
 
 }
