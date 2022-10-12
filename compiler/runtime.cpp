@@ -3,16 +3,17 @@
 #include <iostream>
 #include <sstream>
 #include <cstdarg>
+#include <memory>
 
 using namespace std;
 
 #define IsSchemeType(val, Ty) (((val) & static_cast<unsigned>(Scheme::Mask::Ty)) == static_cast<unsigned>(Scheme::Tag::Ty))
-#define TagSchemeVal(val, Ty) ((val) | static_cast<unsigned>(Scheme::Tag::Ty))
+#define TagSchemeVal(val, Ty) (reinterpret_cast<SchemeValTy>(val) | static_cast<unsigned>(Scheme::Tag::Ty))
 
-#define ToConsPtr(val) reinterpret_cast<Scheme::Cons*>((val) & ~static_cast<SchemeValTy>(Scheme::Mask::Pair))
+#define ToConsPtr(val) reinterpret_cast<Runtime::Cons*>((val) & ~static_cast<SchemeValTy>(Scheme::Mask::Pair))
 
-#define ToVecPtr(val) reinterpret_cast<Scheme::Vec*>((val) & ~static_cast<SchemeValTy>(Scheme::Mask::Vector))
-#define ToBoxPtr(val) reinterpret_cast<Scheme::Box*>((val) & ~static_cast<SchemeValTy>(Scheme::Mask::Box))
+#define ToVecPtr(val) reinterpret_cast<Runtime::Vec*>((val) & ~static_cast<SchemeValTy>(Scheme::Mask::Vector))
+#define ToBoxPtr(val) reinterpret_cast<Runtime::Box*>((val) & ~static_cast<SchemeValTy>(Scheme::Mask::Box))
 
 static ostream& ToString(ostream& os, SchemeValTy val)
 {
@@ -86,7 +87,12 @@ static ostream& ToString(ostream& os, SchemeValTy val)
 			break;
 		}
 		//symbol
-		case 0b110: { os << "TODO"; } //TODO
+		case 0b110:
+		{
+			auto sym = reinterpret_cast<Runtime::Sym*>(val & ~static_cast<SchemeValTy>(Scheme::Mask::Symbol));
+			os << "'" << sym->name;
+			break;
+		}
 		default:
 		{
 			os << "#unknown type" ;
@@ -105,8 +111,8 @@ SchemeValTy display(SchemeValTy val)
 
 SchemeValTy cons(SchemeValTy v1, SchemeValTy v2)
 {
-	auto pr = new Scheme::Cons{v1, v2};
-	return TagSchemeVal(reinterpret_cast<SchemeValTy>(pr), Pair);
+	auto pr = new Runtime::Cons{v1, v2};
+	return TagSchemeVal(pr, Pair);
 }
 
 SchemeValTy car(SchemeValTy pr)
@@ -123,9 +129,9 @@ SchemeValTy cdr(SchemeValTy pr)
 
 SchemeValTy box(SchemeValTy val)
 {
-	auto b = new Scheme::Box;
+	auto b = new Runtime::Box;
 	b->val = val;
-	return TagSchemeVal(reinterpret_cast<SchemeValTy>(b), Box);
+	return TagSchemeVal(b, Box);
 }
 
 SchemeValTy unbox(SchemeValTy b)
@@ -143,11 +149,11 @@ SchemeValTy set_45_box_33_(SchemeValTy b, SchemeValTy val)
 
 SchemeValTy  make_45_vector(SchemeValTy len, SchemeValTy val)
 {
-	auto v = new Scheme::Vec;
+	auto v = new Runtime::Vec;
 	v->len = len >> 3;
 	v->arr = new SchemeValTy [v->len];
 	std::fill(v->arr, v->arr + v->len, val);
-	return TagSchemeVal(reinterpret_cast<SchemeValTy>(v), Vector);
+	return TagSchemeVal(v, Vector);
 }
 
 SchemeValTy  vector_45_ref(SchemeValTy v, SchemeValTy idx)
@@ -169,9 +175,9 @@ SchemeValTy vector_45_set_33_(SchemeValTy v, SchemeValTy idx, SchemeValTy val)
 	return static_cast<SchemeValTy>(Scheme::Tag::Void);
 }
 
-SchemeValTy allocateClosure(char* code, int arity, int fvs, ...)
+SchemeValTy schemeAllocateClosure(char* code, int arity, int fvs, ...)
 {
-	auto clos = new Scheme::Closure;
+	auto clos = new Runtime::Closure;
 	clos->code = code;
 	clos->arity = arity;
 	clos->fvs = new SchemeValTy [fvs];
@@ -183,7 +189,22 @@ SchemeValTy allocateClosure(char* code, int arity, int fvs, ...)
 	}
 	va_end(vargs);
 
-	return TagSchemeVal(reinterpret_cast<SchemeValTy>(clos), Closure);
+	return TagSchemeVal(clos, Closure);
+}
+
+SchemeValTy schemeInternSymbol(const char* sym)
+{
+	static unordered_map<string, unique_ptr<Runtime::Sym>> pool;
+
+	auto it = pool.find(sym);
+	Runtime::Sym* ret = nullptr;
+	if(it == pool.end()) {
+		auto it = pool.insert({sym, make_unique<Runtime::Sym>(sym)});
+		ret = it.first->second.get();
+	}else {
+		ret = it->second.get();
+	}
+	return TagSchemeVal(ret, Symbol);
 }
 
 SchemeValTy null_63_(SchemeValTy val)
@@ -204,6 +225,11 @@ SchemeValTy symbol_63_(SchemeValTy val)
 SchemeValTy number_63_(SchemeValTy val)
 {
 	return Scheme::toBoolReps((val & static_cast<SchemeValTy>(Scheme::Mask::Fixnum)) == static_cast<SchemeValTy>(Scheme::Tag::Fixnum));
+}
+
+SchemeValTy eq_63_(SchemeValTy v1, SchemeValTy v2)
+{
+	return Scheme::toBoolReps(v1 == v2);
 }
 
 namespace Runtime

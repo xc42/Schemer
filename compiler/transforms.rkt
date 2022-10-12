@@ -6,7 +6,7 @@
   (struct/contract Int Expr ([value fixnum?])  #:transparent)
   (struct/contract Bool Expr ([value boolean?])  #:transparent)
   (struct/contract Var Expr ([name symbol?])  #:transparent)
-  (struct/contract Quote Expr ([dat (or/c pair? symbol? fixnum? null?)]) #:transparent)
+  (struct/contract Quote Expr ([dat (or/c pair? symbol? fixnum? null? boolean?)]) #:transparent)
   (struct/contract Let Expr ([var symbol?] [rhs Expr?] [body Expr?])  #:transparent)
   (struct/contract If Expr ([cnd Expr?] [thn Expr?] [els Expr?])  #:transparent)
   (struct/contract Lambda Expr ([param* (listof symbol?)] [body Expr?]) #:transparent)
@@ -29,7 +29,7 @@
 	  (cons . 2) (car . 1) (cdr . 1)
 	  (make-vector . 2) (vector-set! . 3) (vector-ref . 2) (vector-length . 1)
 	  (box . 1) (set-box! 2) (unbox . 1)
-	  (null? . 1) (pair? . 1) (symbol? . 1) (number? . 1))))
+	  (null? . 1) (pair? . 1) (symbol? . 1) (number? . 1) (eq? . 2))))
 
 (define (parse-exp e)
   (match e
@@ -55,6 +55,7 @@
     [`(begin ,es ... ,e)
      (Begin (for/list ([e es]) (parse-exp e)) (parse-exp e))]
 	[`(quote ,dat) (Quote dat)]
+	[`(not ,e) (If (parse-exp e) (Bool #f) (Bool #t))] 
 	[`(and ,es ...)
 	  (for/foldr ([thn (Bool #t)])
 		([e es])
@@ -193,6 +194,7 @@
 	(cond
 	  [(pair? d) (Prim 'cons (list (convert (car d)) (convert (cdr d))))]
 	  [(fixnum? d) (Int d)]
+	  [(boolean? d) (Bool d)]
 	  [else (Quote d)]))
 
   (define ((convert-expr  callback) e)

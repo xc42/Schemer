@@ -60,7 +60,21 @@ void ExprCodeGen::forQuote(const Quote& qo)
 			value_ =  ConstantInt::getSigned(IntegerType::get(ctx_, 64), static_cast<Scheme::ValueType>(Scheme::Tag::Nil)); 
 			break;
 		}
-		defualt:
+		case Parser::Datum::Type::Symbol:
+		{
+			const auto& sym = static_cast<Parser::DatumSym&>(*qo.datum_);
+			auto strLit = ConstantDataArray::getString(ctx_, sym.value_);
+			auto glob = module_.getNamedGlobal(sym.value_);
+			if(!glob) {
+				glob = new GlobalVariable(module_, strLit->getType(), true, llvm::GlobalValue::PrivateLinkage, strLit, sym.value_);
+				glob->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+			}
+
+			auto func = module_.getFunction("schemeInternSymbol");
+			value_ = builder_.CreateCall(func, {builder_.CreateConstGEP2_64(glob->getValueType(), glob, 0, 0, "c")}, "sym"); 
+			break;
+		}
+		case Parser::Datum::Type::Pair:
 		{
 			throw std::runtime_error("complex datum should be placed as global variable(using define) and initialize in main");
 		}
@@ -157,7 +171,7 @@ void ExprCodeGen::forLambda(const Lambda& lam)
 	string liftFnName = FrontEndPass::gensym(fmt::format("{}_lambda", builder_.GetInsertBlock()->getParent()->getName()));
 	vector<Type*> paramTys{lam.arity()+1, schemeValType}; //closure, param1, param2 ... param_n
 	auto fnType = FunctionType::get(schemeValType, paramTys, false);
-	auto lambdaFn = Function::Create(fnType, llvm::GlobalValue::ExternalLinkage, liftFnName, &module_);
+	auto lambdaFn = Function::Create(fnType, llvm::GlobalValue::InternalLinkage, liftFnName, &module_);
 
 	const auto& params = *lam.params_;
 	SymTable lamTable;
@@ -189,7 +203,7 @@ void ExprCodeGen::forLambda(const Lambda& lam)
 	lambdaBuilder.CreateRet(genforLambda.getValue());
 
 	//codgen of closure
-	auto allocCloFunc = module_.getFunction("allocateClosure");
+	auto allocCloFunc = module_.getFunction("schemeAllocateClosure");
 	vector<Value*> args;
 	args.emplace_back( builder_.CreateBitCast(lambdaFn, Type::getInt8PtrTy(ctx_), "lambdaPtr"));
 	args.emplace_back(ConstantInt::getSigned(IntegerType::get(ctx_, 32), lam.arity()));
@@ -271,7 +285,7 @@ void ExprCodeGen::forApply(const Apply& app)
 }
 
 
-void ProgramCodeGen::initializeGlobals()
+void ProgramCodeGen::initializeGlobalDecls()
 {
 	for(const auto& kv: Runtime::builtinFunc) {
 		vector<Type*> paramTys;
@@ -281,16 +295,27 @@ void ProgramCodeGen::initializeGlobals()
 		Function::Create(funcTy, llvm::GlobalObject::ExternalLinkage, simpleMangle(kv.first), &module_);
 	}
 
-	//struct Closure (see in scheme.h)
+	//struct Closure (see in runtime.h)
 	vector<Type*> elemts { Type::getInt32Ty(ctx_), Type::getInt8PtrTy(ctx_), Type::getInt64Ty(ctx_)->getPointerTo()};
 	StructType::create(ctx_, elemts, "Closure");
-	//allocateClosure
+
 	auto llvmcharPtrTy = Type::getInt8PtrTy(ctx_);
 	auto llvmInt32Ty = Type::getInt32Ty(ctx_);
-	auto fixParamTys = vector<Type*>{llvmcharPtrTy, llvmInt32Ty, llvmInt32Ty}; //arity, fvs
-	auto fnType = FunctionType::get(schemeValType, fixParamTys, true);
-	Function::Create(fnType, llvm::GlobalObject::ExternalLinkage, "allocateClosure", &module_);
+	auto llvmInt8Ty = Type::getInt8Ty(ctx_);
 
+	//schemeAllocateClosure
+	Function::Create(
+			FunctionType::get(schemeValType,{llvmcharPtrTy, llvmInt32Ty, llvmInt32Ty}, true), 
+			llvm::GlobalObject::ExternalLinkage, 
+			"schemeAllocateClosure", 
+			&module_);
+
+	//schemeInternSymbol
+	Function::Create(
+			FunctionType::get(schemeValType, Type::getInt8PtrTy(ctx_), false), 
+			llvm::GlobalValue::ExternalLinkage, 
+			"schemeInternSymbol",
+			&module_);
 }
 
 
@@ -306,7 +331,7 @@ std::string ProgramCodeGen::simpleMangle(const std::string& s)
 
 void ProgramCodeGen::gen(FrontEndPass::Program& prog)
 {
-	initializeGlobals();
+	initializeGlobalDecls();
 
 	for(auto& [def, passCtx]: prog) {
 		if(def.body_->type_ == Expr::Type::Lambda) {

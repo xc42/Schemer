@@ -38,35 +38,6 @@ namespace Scheme
 		Void		= 0b11111
 	};
 
-	//object allocate on heap should at least 8 bytes aligned
-	//because we use lowe 3 bit for tagging
-	struct alignas(8) Cons
-	{
-		ValueType car, cdr;
-	};
-
-	struct alignas(8) Vec
-	{
-		std::size_t len;
-		ValueType   *arr;
-	};
-
-	struct alignas(8) Box
-	{
-		ValueType val;
-	};
-
-	struct alignas(8) Sym
-	{
-		const char* s;
-	};
-
-	struct alignas(8) Closure
-	{
-		int arity;
-		char* code;
-		ValueType *fvs;
-	};
 
 	inline ValueType toFixnumReps(int64_t n) {
 		return n << 3;

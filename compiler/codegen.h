@@ -98,17 +98,14 @@ private:
 class ProgramCodeGen
 {
 public:
-	ProgramCodeGen(): module_("schemeMain", ctx_), builder_(ctx_) 
-	{
-		schemeValType = llvm::Type::getInt64Ty(ctx_);
-	}
+	ProgramCodeGen(): module_("schemeMain", ctx_), builder_(ctx_) { schemeValType = llvm::Type::getInt64Ty(ctx_); }
 
 	void gen(FrontEndPass::Program& prog);
 	void printIR();
 
 	static std::string simpleMangle(const std::string& s);
 private:
-	void initializeGlobals();
+	void initializeGlobalDecls();
 
 	llvm::LLVMContext ctx_;
 	llvm::Module module_;

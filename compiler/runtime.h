@@ -26,28 +26,60 @@ extern "C"
 	SchemeValTy pair_63_(SchemeValTy);
 	SchemeValTy symbol_63_(SchemeValTy);
 	SchemeValTy number_63_(SchemeValTy);
+	SchemeValTy eq_63_(SchemeValTy, SchemeValTy);
 
-	SchemeValTy allocateClosure(char* code, int arity, int fvs, ...);
+	SchemeValTy schemeAllocateClosure(char* code, int arity, int fvs, ...);
+	SchemeValTy schemeInternSymbol(const char* sym); 
 }
 
 namespace Runtime
 {
+	//object allocate on heap should at least 8 bytes aligned
+	//because we use lower 3 bit for tagging
+	struct alignas(8) Cons
+	{
+		Scheme::ValueType car, cdr;
+	};
 
-static const std::unordered_map<std::string, int> builtinFunc = 
-{ 
-	//name, arity
-	{"display", 1},
-	{"cons", 2},
-	{"car", 1},
-	{"cdr", 1},
-	{"box", 1},
-	{"unbox", 1},
-	{"set-box!", 2},
-	{"make-vector", 2},
-	{"vector-ref", 2},
-	{"vector-length", 1},
-	{"vector-set!", 3},
-	{"null?", 1}, {"pair?", 1},{"symbol?", 1}, {"number?", 1}
-};
+	struct alignas(8) Vec
+	{
+		std::size_t len;
+		Scheme::ValueType   *arr;
+	};
+
+	struct alignas(8) Box
+	{
+		Scheme::ValueType val;
+	};
+
+	struct alignas(8) Sym
+	{
+		Sym(const char* c): name(c) {}
+		const char *name;
+	};
+
+	struct alignas(8) Closure
+	{
+		int arity;
+		char* code;
+		Scheme::ValueType *fvs;
+	};
+
+	static const std::unordered_map<std::string, int> builtinFunc = 
+	{ 
+		//name, arity
+		{"display", 1},
+		{"cons", 2},
+		{"car", 1},
+		{"cdr", 1},
+		{"box", 1},
+		{"unbox", 1},
+		{"set-box!", 2},
+		{"make-vector", 2},
+		{"vector-ref", 2},
+		{"vector-length", 1},
+		{"vector-set!", 3},
+		{"null?", 1}, {"pair?", 1},{"symbol?", 1}, {"number?", 1}, {"eq?", 2}
+	};
 
 }
