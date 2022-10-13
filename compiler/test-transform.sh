@@ -4,6 +4,7 @@ total=0
 succ=0
 
 for f in tests/*; do
+	printf "Testing file %s ...\n" $f
 	stdOut=`racket -e "$(cat $f)"`
 	transOut=`racket -e "$(./transforms.rkt < $f)"`
 

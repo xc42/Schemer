@@ -8,6 +8,7 @@
   (struct/contract Var Expr ([name symbol?])  #:transparent)
   (struct/contract Quote Expr ([dat (or/c pair? symbol? fixnum? null? boolean?)]) #:transparent)
   (struct/contract Let Expr ([var symbol?] [rhs Expr?] [body Expr?])  #:transparent)
+  (struct/contract LetRec Expr ([binds* (listof (cons/c symbol? Expr?))] [body Expr?])  #:transparent)
   (struct/contract If Expr ([cnd Expr?] [thn Expr?] [els Expr?])  #:transparent)
   (struct/contract Lambda Expr ([param* (listof symbol?)] [body Expr?]) #:transparent)
   (struct/contract Prim Expr ([op symbol?] [es (listof Expr?)]) #:transparent)
@@ -42,6 +43,8 @@
 				 ([x xs]
 				  [r rhs])
 				 (Let x (parse-exp r) acc))]
+	[`(letrec ([,xs ,es] ...) ,body)
+	  (LetRec (for/list ([x xs] [e es]) (cons x (parse-exp e))) (parse-exp body))]
 	[`(if ,cnd ,thn ,els) (If (parse-exp cnd) (parse-exp thn) (parse-exp els))]
 	[`(cond (,pred ,body) ..1 (else ,els))
 	  (for/foldr ([acc (parse-exp els)])
@@ -92,6 +95,8 @@
 	[(Quote dat) `(quote ,dat)]
     [(Let x rhs body)
      `(let ([,x ,(unparse-exp rhs)]) ,(unparse-exp body))]
+	[(LetRec binds* body)
+	 `(letrec ,(map (lambda (bd) (list (car bd) (cdr bd))) binds*) ,(unparse-exp body))]
 	[(If pred thn els) (cons 'if (map unparse-exp (list pred thn els)))]
     [(Lambda ps body)
      `(lambda ,ps ,(unparse-exp body))]
@@ -143,13 +148,15 @@
   (define ((uniqify-exp env) e)
 	(let ([recur (uniqify-exp env)])
 	  (match e
-		[(Var v) 
-		 (cond
-		   [(dict-ref env v #f) => (lambda (nv) (Var nv))]
-		   [else e])]
+		[(Var v) (Var (dict-ref env v))]
 		[(Let v e body)
-		 (let ([v^ (gensym v)])
-		   (Let v^ (recur e) ((uniqify-exp (cons (cons v v^) env)) body)))]
+		 (cond 
+		   [(dict-ref env v #f)
+			=> (lambda (v)
+				 (let* ([v^ (gensym v)]
+						[env^ (cons (cons v v^) env)])
+				   (Let v^ (recur e) ((uniqify-exp env^) body))))]
+		   [else (Let v (recur e) ((uniqify-exp (cons (cons v v) env)) body))])]
 		[(Lambda ps body)
 		 (let* ([ps^ (map gensym ps)]
 				[env^ (for/fold ([env^ env])
@@ -161,10 +168,14 @@
 		[(SetBang v e) (SetBang (dict-ref env v) (recur e))]
 		[_ (fmap-expr recur e)])))
 
-  (let ([global-env 
+  (let* ([top-env
 		  (for/list ([d (Program-def* p)]) 
-			(cons (Def-name d) (Def-name d)))])
-  (map-program-exp (uniqify-exp global-env) p)))
+			(cons (Def-name d) (Def-name d)))]
+		[init-env 
+		  (for/fold ([env top-env])
+			([(k v) (in-hash primitives)])
+			(cons (cons k k) env))])
+  (map-program-exp (uniqify-exp init-env) p)))
 
 (define (eta-abstract-prim p) 
   (map-program-exp (eta-abstract-expr primitives) p))
