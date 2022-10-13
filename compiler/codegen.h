@@ -117,8 +117,14 @@ private:
 class FreeVarScanner: public FrontEndPass::DefaultRecur
 {
 public:
+	FreeVarScanner(const llvm::Module& m): module_(m) {}
+	const auto& getFVs() { return freeVars_; }
+
+private:
     virtual void forVar(const Var& v) override { 
-		if(Scheme::primitives.count(v.v_) == 0) 
+		if(Scheme::primitives.count(v.v_) == 0 && 
+				!module_.getNamedGlobal(v.v_) && 
+				!module_.getFunction(ProgramCodeGen::simpleMangle(v.v_)))
 			freeVars_.insert(v.v_); 
 	}
 
@@ -136,7 +142,6 @@ public:
 		}
 	}
 
-	const auto& getFVs() { return freeVars_; }
-private:
+	const llvm::Module& module_;
 	std::unordered_set<std::string> freeVars_;
 };

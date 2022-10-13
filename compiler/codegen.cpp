@@ -163,7 +163,7 @@ void ExprCodeGen::forLet(const Let& let)
 
 void ExprCodeGen::forLambda(const Lambda& lam)
 {
-	FreeVarScanner fvScanner;
+	FreeVarScanner fvScanner(module_);
 	lam.accept(fvScanner);
 	const auto& fvs = fvScanner.getFVs();
 	
@@ -291,7 +291,6 @@ void ProgramCodeGen::initializeGlobalDecls()
 		vector<Type*> paramTys;
 		paramTys.resize(kv.second, schemeValType);
 		auto funcTy = FunctionType::get(schemeValType, paramTys, false);
-		//cout << simpleMangle(kv.first) << endl;
 		Function::Create(funcTy, llvm::GlobalObject::ExternalLinkage, simpleMangle(kv.first), &module_);
 	}
 
@@ -340,7 +339,25 @@ void ProgramCodeGen::gen(FrontEndPass::Program& prog)
 			vector<Type*> paramTys{lambda.arity(), schemeValType};
 			auto funcTy = FunctionType::get(schemeValType, paramTys, false);
 			auto func = Function::Create(funcTy, llvm::GlobalValue::ExternalLinkage, simpleMangle(def.name_.v_), &module_);
+			//先全局扫一遍构造好top-level的绑定，再生成函数体
 
+		}else if(def.body_->type_ == Expr::Type::Number) {
+			//new GlobalVariable(module_, schemeValType, false, llvm::GlobalValue::InternalLinkage, nullptr, def.name_.v_);
+			module_.getOrInsertGlobal(def.name_.v_, schemeValType);
+			auto glob = module_.getNamedGlobal(def.name_.v_);
+			glob->setLinkage(llvm::GlobalValue::InternalLinkage);
+			glob->setInitializer(ConstantInt::getSigned(schemeValType, Scheme::toFixnumReps(static_cast<NumberE&>(*def.body_).value_)));
+
+		}else {
+			throw std::runtime_error("unsupported complex global construct, maybe there's bug in racket frontend pass"); 
+		}
+	}
+
+	for(auto& [def, passCtx]: prog) {
+		if(def.body_->type_ == Expr::Type::Lambda) {
+			const auto& lambda = static_cast<const Lambda&>(*def.body_);
+
+			auto func = module_.getFunction(simpleMangle(def.name_.v_));
 			auto entryBB = BasicBlock::Create(ctx_, "entry", func);
 			builder_.SetInsertPoint(entryBB);
 
@@ -364,18 +381,8 @@ void ProgramCodeGen::gen(FrontEndPass::Program& prog)
 
 			verifyFunction(*func, &llvm::errs());
 
-		}else if(def.body_->type_ == Expr::Type::Number) {
-			//new GlobalVariable(module_, schemeValType, false, llvm::GlobalValue::InternalLinkage, nullptr, def.name_.v_);
-			module_.getOrInsertGlobal(def.name_.v_, schemeValType);
-			auto glob = module_.getNamedGlobal(def.name_.v_);
-			glob->setLinkage(llvm::GlobalValue::InternalLinkage);
-			glob->setInitializer(ConstantInt::getSigned(schemeValType, Scheme::toFixnumReps(static_cast<NumberE&>(*def.body_).value_)));
-
-		}else {
-			throw std::runtime_error("unsupported complex global construct, maybe there's bug in racket frontend pass"); 
 		}
 	}
-
 	verifyModule(module_, &llvm::errs());
 
 }
