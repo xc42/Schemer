@@ -28,9 +28,9 @@
 	'((+ . 2) (- . 2) (* . 2) (/ . 2) 
 	  (> . 2) (>= . 2) (< . 2) (<= . 2) (= . 2)
 	  (cons . 2) (car . 1) (cdr . 1)
-	  (make-vector . 2) (vector-set! . 3) (vector-ref . 2) (vector-length . 1)
-	  (box . 1) (set-box! 2) (unbox . 1)
-	  (null? . 1) (pair? . 1) (symbol? . 1) (number? . 1) (eq? . 2))))
+	  (make-vector . 2) (vector-set! . 3) (vector-ref . 2) (vector-length . 1) (vector? . 1)
+	  (box . 1) (set-box! 2) (unbox . 1) (box? . 1)
+	  (null? . 1) (pair? . 1) (symbol? . 1) (number? . 1) (boolean? . 1) (void? . 1) (eq? . 2))))
 
 (define (parse-exp e)
   (match e

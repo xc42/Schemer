@@ -14,19 +14,23 @@ extern "C"
 	// the '-' are "mangled", see ProgramCodeGen::simpleMangle
 	
 	SchemeValTy box(SchemeValTy);
+	SchemeValTy box_63_(SchemeValTy);
 	SchemeValTy unbox(SchemeValTy);
 	SchemeValTy set_45_box_33_(SchemeValTy,SchemeValTy);
+
 	SchemeValTy make_45_vector(SchemeValTy, SchemeValTy);
+	SchemeValTy vector_63_(SchemeValTy);
 	SchemeValTy vector_45_ref(SchemeValTy, SchemeValTy);
 	SchemeValTy vector_45_length(SchemeValTy);
-
 	SchemeValTy vector_45_set_33_(SchemeValTy, SchemeValTy, SchemeValTy);
 
 	SchemeValTy null_63_(SchemeValTy);
 	SchemeValTy pair_63_(SchemeValTy);
 	SchemeValTy symbol_63_(SchemeValTy);
 	SchemeValTy number_63_(SchemeValTy);
+	SchemeValTy boolean_63_(SchemeValTy);
 	SchemeValTy eq_63_(SchemeValTy, SchemeValTy);
+	SchemeValTy void_63_(SchemeValTy);
 
 	SchemeValTy schemeAllocateClosure(char* code, int arity, int fvs, ...);
 	SchemeValTy schemeInternSymbol(const char* sym); 
@@ -72,14 +76,9 @@ namespace Runtime
 		{"cons", 2},
 		{"car", 1},
 		{"cdr", 1},
-		{"box", 1},
-		{"unbox", 1},
-		{"set-box!", 2},
-		{"make-vector", 2},
-		{"vector-ref", 2},
-		{"vector-length", 1},
-		{"vector-set!", 3},
-		{"null?", 1}, {"pair?", 1},{"symbol?", 1}, {"number?", 1}, {"eq?", 2}
+		{"box", 1}, {"box?", 1}, {"unbox", 1}, {"set-box!", 2},
+		{"make-vector", 2}, {"vector-ref", 2}, {"vector-length", 1}, {"vector-set!", 3}, {"vector?", 1},
+		{"null?", 1}, {"void?", 1}, {"pair?", 1},{"symbol?", 1}, {"number?", 1}, {"boolean?", 1}, {"eq?", 2}
 	};
 
 }

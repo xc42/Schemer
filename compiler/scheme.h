@@ -52,8 +52,9 @@ namespace Scheme
 		"+", "-", "*", "/", 
 		">", ">=", "<", "<=", "=",
 		"cons", "car", "cdr",
-		"box", "unbox", "box-set!",
-		"vector", "make-vector", "vector-ref", "vector-set!", "vector-length"
+		"box", "unbox", "box-set!", "box?",
+		"vector", "make-vector", "vector-ref", "vector-set!", "vector-length", "vector?",
+		"null?" , "pair?" ,"symbol?" , "number?" , "boolean?", "eq?", "void?"
 	};
 
 

@@ -134,6 +134,7 @@ SchemeValTy box(SchemeValTy val)
 	return TagSchemeVal(b, Box);
 }
 
+
 SchemeValTy unbox(SchemeValTy b)
 {
 	auto p = ToBoxPtr(b);
@@ -209,28 +210,52 @@ SchemeValTy schemeInternSymbol(const char* sym)
 
 SchemeValTy null_63_(SchemeValTy val)
 {
-	return Scheme::toBoolReps((val & static_cast<SchemeValTy>(Scheme::Mask::Nil)) == static_cast<SchemeValTy>(Scheme::Tag::Nil));
+	return Scheme::toBoolReps(IsSchemeType(val, Nil));
 }
 
 SchemeValTy pair_63_(SchemeValTy val)
 {
-	return Scheme::toBoolReps((val & static_cast<SchemeValTy>(Scheme::Mask::Pair)) == static_cast<SchemeValTy>(Scheme::Tag::Pair));
+	return Scheme::toBoolReps(IsSchemeType(val, Pair));
 }
 
 SchemeValTy symbol_63_(SchemeValTy val)
 {
-	return Scheme::toBoolReps((val & static_cast<SchemeValTy>(Scheme::Mask::Symbol)) == static_cast<SchemeValTy>(Scheme::Tag::Symbol));
+	return Scheme::toBoolReps(IsSchemeType(val, Symbol));
 }
 
 SchemeValTy number_63_(SchemeValTy val)
 {
-	return Scheme::toBoolReps((val & static_cast<SchemeValTy>(Scheme::Mask::Fixnum)) == static_cast<SchemeValTy>(Scheme::Tag::Fixnum));
+	return Scheme::toBoolReps(IsSchemeType(val, Fixnum));
+}
+
+SchemeValTy boolean_63_(SchemeValTy val)
+{
+	return Scheme::toBoolReps(IsSchemeType(val, Bool));
 }
 
 SchemeValTy eq_63_(SchemeValTy v1, SchemeValTy v2)
 {
 	return Scheme::toBoolReps(v1 == v2);
 }
+
+SchemeValTy box_63_(SchemeValTy val)
+{
+	return Scheme::toBoolReps(IsSchemeType(val, Box));
+	
+}
+
+SchemeValTy vector_63_(SchemeValTy val)
+{
+	return Scheme::toBoolReps(IsSchemeType(val, Vector));
+	
+}
+
+SchemeValTy void_63_(SchemeValTy val)
+{
+	return Scheme::toBoolReps(IsSchemeType(val, Void));
+
+}
+
 
 namespace Runtime
 {
