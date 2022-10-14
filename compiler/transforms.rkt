@@ -125,16 +125,16 @@
 	))
 
 (define (fold-expr f init expr)
-  (let ([fold-recur (lambda (e acc) (fold-expr f acc e))])
 	(match expr
-	  [(If e1 e2 e3) (foldl fold-recur init (list e1 e3 e3))]
-	  [(Apply f args) (foldl fold-recur init (cons f args))]
-	  [(Prim op es) (foldl fold-recur init es)]
-	  [(Let x e body) (foldl fold-recur init (list e body))]
-	  [(Lambda ps body) (fold-expr f init body)]
-	  [(SetBang v e)  (fold-expr f init e)]
-	  [(Begin es body) (foldl fold-recur init (cons body  es))]
-	  [(or (? atm?)) init])))
+	  [(If e1 e2 e3) (foldl f init (list e1 e3 e3))]
+	  [(Apply func args) (foldl f init (cons func args))]
+	  [(Prim op es) (foldl f init es)]
+	  [(Let x e body) (foldl f init (list e body))]
+	  [(LetRec binds* body) (foldl (lambda (bd acc) (f (cdr bd) acc)) (f body init) binds*)]
+	  [(Lambda ps body) (f body init)]
+	  [(SetBang v e)  (f e init)]
+	  [(Begin es body) (foldl f init (cons body  es))]
+	  [(? atm?) init]))
 
 (define-syntax-rule (map-program-exp f p)
   (match-let ([(Program ds body) p])
@@ -157,6 +157,17 @@
 						[env^ (cons (cons v v^) env)])
 				   (Let v^ (recur e) ((uniqify-exp env^) body))))]
 		   [else (Let v (recur e) ((uniqify-exp (cons (cons v v) env)) body))])]
+		[(LetRec binds* body) 
+		 (let* ([env^ (for/fold ([env env]) 
+						([bd binds*]) 
+						(cons (cons (car bd) (gensym (car bd))) env))]
+				[uniq (uniqify-exp  env^)])
+		   (LetRec (for/fold ([binds^ '()]) 
+					 ([bd binds*])
+					 (cons 
+					   (cons (dict-ref env^ (car bd)) (uniq (cdr bd)))
+					   binds^))
+				   (uniq body)))]
 		[(Lambda ps body)
 		 (let* ([ps^ (map gensym ps)]
 				[env^ (for/fold ([env^ env])
@@ -176,6 +187,33 @@
 			([(k v) (in-hash primitives)])
 			(cons (cons k k) env))])
   (map-program-exp (uniqify-exp init-env) p)))
+
+(define (convert-letrec p)
+  (define ((check-letrec vars) e)
+	(match e
+	  [(? Lambda?) #t]
+	  [(Var v) (not (set-member? vars v))]
+	  [_ (fold-expr (lambda (e acc) (and acc ((check-letrec vars) e))) #t e)]))
+
+  (define (convert-expr e)
+	(match e
+	  [(LetRec binds* body)
+	   (let* ([vars (for/set ([bd binds*]) (car bd))]
+			  [unref? (check-letrec vars)])
+		 (unless (andmap (lambda (bd) (unref? (cdr bd))) binds*)
+		   (error "invalid letrec")))
+
+	   (for/fold ([body^ (Begin 
+						   (for/list 
+							 ([bd binds*]) 
+							 (SetBang (car bd) (convert-expr (cdr bd))))
+						   body)])
+		 ([bd binds*])
+		 (Let (car bd) (Int -1) body^))]
+	  [_ (fmap-expr convert-expr e)]))
+
+  (map-program-exp convert-expr p))
+
 
 (define (eta-abstract-prim p) 
   (map-program-exp (eta-abstract-expr primitives) p))
@@ -262,22 +300,24 @@
 	  [_ (fmap-expr opt-recur expr)]))
   (map-program-exp (opt-expr '()) p))
 
+(define (uncover-free expr)
+  (match expr
+	[(Var v) (set v)]
+	[(Let v e body) (set-union (uncover-free e) (set-remove (uncover-free body) v))]
+	[(Lambda ps body) (set-subtract (uncover-free body) (apply set ps))]
+	[_ (fold-expr (lambda (e acc) (set-union (uncover-free e) acc)) (set) expr)]))
+
 (define (assignment-conversion p)
   (define (scan-assigned-captured expr)
 	(match expr
-	  [(Var v) (cons (set) (set v))]
 	  [(SetBang v e) 
 	   (let ([ass-cap (scan-assigned-captured e)])
 		 (cons (set-add (car ass-cap) v) 
 			   (cdr ass-cap)))]
 	  [(Lambda ps body)
-	   (let ([ass-cap (scan-assigned-captured body)])
-		 (cons (car ass-cap) (set-subtract (cdr ass-cap) (apply set ps))))]
-	  [(Let v e body)
-	   (match-let ([(cons e-ass e-cap) (scan-assigned-captured e)]
-				   [(cons bd-ass bd-cap) (scan-assigned-captured body)])
-		 (cons (set-union e-ass bd-ass)
-			   (set-remove (set-union e-cap bd-cap) v)))]
+	   (let ([fvs (uncover-free expr)]
+			 [ass-cap (scan-assigned-captured body)])
+		 (cons (car ass-cap) (set-union fvs (cdr ass-cap))))]
 	  [_ (fold-expr 
 		   (lambda (e acc)
 			 (match-let ([(cons ass cap) (scan-assigned-captured e)]
@@ -293,18 +333,19 @@
 		   [box-it? (lambda (v) 
 					  (and (set-member? (car assign-cap) v) 
 						   (set-member? (cdr assign-cap) v)))])
-	  (match expr
-		[(Var v) (if (box-it? v) (Apply (Var 'unbox) (list expr)) expr)]
-		[(Let v e body) 
-		 (let ([e^ (if (box-it? v) 
-					 (Apply (Var 'box) (conv-recur e)) 
-					 (conv-recur e))])
-		   (Let v e^ (conv-recur body)))]
-		[(SetBang v e) 
-		 (if (box-it? v)
-		   (Apply (Var 'box-set!) (list (Var v) (conv-recur e)))
-		   (SetBang v (conv-recur e)))]
-		[_ (fmap-expr conv-recur expr)])))
+	  (let recur ([expr expr])
+		(match expr
+		  [(Var v) (if (box-it? v) (Apply (Var 'unbox) (list expr)) expr)]
+		  [(Let v e body) 
+		   (let ([e^ (if (box-it? v) 
+					   (Apply (Var 'box) (list (recur e)))
+					   (recur e))])
+			 (Let v e^ (recur body)))]
+		  [(SetBang v e) 
+		   (if (box-it? v)
+			 (Apply (Var 'set-box!) (list (Var v) (recur e)))
+			 (SetBang v (recur e)))]
+		  [_ (fmap-expr recur expr)]))))
 
   (map-program-exp conv-recur p))
 
@@ -312,6 +353,7 @@
 (define passes
   (list 
 	uniqify
+	convert-letrec
 	eta-abstract-prim 
 	eta-abstract-top-func 
 	hoist-complex-datum

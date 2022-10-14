@@ -232,6 +232,9 @@ void ExprCodeGen::forApply(const Apply& app)
 	{\
 		checkArity(args.size(), 2);\
 		value_ = builder_.CreateCmp(CMP, args[0], args[1]);\
+		value_ = builder_.CreateZExt(value_, schemeValType, "boolExt");\
+		value_ = builder_.CreateShl(value_, 5);\
+		value_ = builder_.CreateOr(value_, llvmInt64(0b101), "scmBool");\
 		return;\
 	}
 		

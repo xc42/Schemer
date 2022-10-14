@@ -18,7 +18,10 @@ public:
     virtual void forVar(const Var&) override {}
     virtual void forQuote(const Quote&) override {}
     virtual void forDefine(const Define& def) override { def.body_->accept(*this); }
-    virtual void forSetBang(const SetBang& setBang) override { setBang.e_->accept(*this); }
+    virtual void forSetBang(const SetBang& setBang) override { 
+		setBang.v_.accept(*this);
+		setBang.e_->accept(*this); 
+	}
     virtual void forBegin(const Begin& bgn) override { for(const auto& e: bgn.es_) e->accept(*this); }
     virtual void forIf(const If& ifExpr) override { 
 		ifExpr.pred_->accept(*this);
