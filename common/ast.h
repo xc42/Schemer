@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <map>
+#include <string>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -36,7 +37,7 @@ struct BooleanE: Expr {
 
 struct Var: Expr{
 	Var():Expr(Expr::Type::Var) {}
-    Var(std::string s):Expr(Expr::Type::Var),v_(std::move(s)){}
+    Var(std::string_view s):Expr(Expr::Type::Var),v_(s){}
     void accept(VisitorE &v) const override;
 
 	operator const std::string&() const { return v_; }
@@ -79,6 +80,11 @@ struct Let: Expr {
 	void accept(VisitorE &v) const override;
 	Binding binds_;
 	Expr::Ptr body_;
+};
+
+struct LetRec: public Let {
+    using Let::Let;
+	void accept(VisitorE &v) const override;
 };
 
 struct Lambda: Expr{
@@ -136,6 +142,7 @@ public:
     virtual void forBegin(const Begin&)=0;
     virtual void forIf(const If&)=0;
 	virtual void forLet(const Let&)=0;
+	virtual void forLetRec(const LetRec&)=0;
     virtual void forLambda(const Lambda&)=0;
     virtual void forApply(const Apply&)=0;
     virtual ~VisitorE()=default;
@@ -149,6 +156,7 @@ inline void Define::accept(VisitorE& v) const { v.forDefine(*this); }
 inline void SetBang::accept(VisitorE& v) const { v.forSetBang(*this); }
 inline void Begin::accept(VisitorE& v) const { v.forBegin(*this); }
 inline void Let::accept(VisitorE& v) const { v.forLet(*this); }
+inline void LetRec::accept(VisitorE& v) const { v.forLetRec(*this); }
 inline void If::accept(VisitorE& v) const { v.forIf(*this); }
 inline void Lambda::accept(VisitorE& v) const { v.forLambda(*this); }
 inline void Apply::accept(VisitorE& v) const { v.forApply(*this); }

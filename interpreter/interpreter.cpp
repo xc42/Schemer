@@ -106,6 +106,22 @@ void Evaluator::forLet(const Let& let)
 	let.body_->accept(*this);
 }
 
+void Evaluator::forLetRec(const LetRec& letrec)
+{
+	vector<pair<Var, Value::Ptr>> binds;
+	for(const auto& kv: letrec.binds_) {
+		binds.emplace_back(kv.first, nullptr);
+	}
+
+	env_ = Environment::extend(binds, env_);
+
+    for (const auto& kv: letrec.binds_) {
+        kv.second->accept(*this);
+        env_->bindings_[kv.first] = std::move(result_);
+    }
+	letrec.body_->accept(*this);
+}
+
 
 void Evaluator::forApply(const Apply &app) {
     app.operator_->accept(*this);

@@ -28,11 +28,18 @@ public:
 		ifExpr.thn_->accept(*this);
 		ifExpr.els_->accept(*this);
 	}
-	virtual void forLet(const Let& let) override {
+    template<class Let>
+    void forLetLike(const Let& let) {
 		for(const auto& kv: let.binds_) {
 			kv.second->accept(*this);
 		}
 		let.body_->accept(*this);
+    }
+	virtual void forLet(const Let& let) override {
+        forLetLike(let);
+	}
+	virtual void forLetRec(const LetRec& letrec) override {
+        forLetLike(letrec);
 	}
 
     virtual void forLambda(const Lambda& lam) override { lam.body_->accept(*this); }

@@ -1,4 +1,5 @@
 #include "parser.h"
+#include <charconv>
 
 namespace Parser {
 
@@ -11,44 +12,23 @@ namespace Common
 	static auto maybeManyVar = MaybeMany(parseVar);
 }
 
-std::vector<std::string> tokenize(const char *c)
-{
-	std::vector<std::string> tokens;
-	while(*c != '\0') {
-		while(*c != '\0' && std::isspace(*c)) ++c;
-		if(*c == '\0') break;
 
-		switch(*c) {
-			case '(':
-				tokens.push_back(std::string(1, *c++));
-				break;
-			case '[':
-				tokens.push_back(std::string(1, '(')); //简单处理方括号
-				c++;
-				break;
-			case ')':
-				tokens.push_back(std::string(1, *c++));
-				break;
-			case ']':
-				tokens.push_back(std::string(1, ']'));
-				c++;
-				break;
-			case '.':
-				tokens.push_back(std::string(1, *c++));
-			case '\'':
-				tokens.push_back(std::string(1, *c++));
-				break;
-			default:
-				const char *c2 = c++;
-				while(*c != '\0' && *c != '(' && *c != ')' && !std::isspace(*c)) ++c;
-				tokens.push_back(std::string(c2, c));
-		}
-	}
-	return tokens;
+Result<vector<Expr::Ptr>> parseProgram(const Range& rg0) 
+{
+    vector<Expr::Ptr> es;
+    auto rg = rg0;
+    while (!rg.eof()) {
+        auto res = parseExp(rg);
+        if (!res)
+            return {res.getErr()};
+
+        es.emplace_back(std::move(res.getValue()));
+        rg = res.rest();
+    }
+    return {std::move(es), rg};
 }
 
-
-Result<Expr::Ptr> parse(const Range& rg)
+Result<Expr::Ptr> parseExp(const Range& rg)
 {
 	if(rg.eof()) return {};
 
@@ -69,8 +49,15 @@ Result<Expr::Ptr> parse(const Range& rg)
 	}
 	else if(peek == "(") {
 		return  Choose<Expr::Ptr>::OneOf(rg, 
-				parseDef, parseQuote, parseLet, parseLambda, parseIf, 
-				parseSetBang, parseBegin, parseApply);
+                        parseDef, 
+                        parseQuote, 
+                        parseLet, 
+                        parseLetRec, 
+                        parseLambda, 
+                        parseIf, 
+                        parseSetBang,
+                        parseBegin,
+                        parseApply);
 	}
 	else {
 		return parseVar(rg);
@@ -80,20 +67,19 @@ Result<Expr::Ptr> parse(const Range& rg)
 Result<std::unique_ptr<NumberE>> parseNumber(const Range& rg)
 {
 	if(rg.eof()) return {};
-	try {
-		size_t pos;
-		auto val = make_unique<NumberE>(std::stoll(rg.cur(), &pos));
-		if(pos == rg.cur().size()) {
-			//cout << "[parseNumber]" << "parsed num: " << val->value_ << endl;
-			return {std::move(val), rg+1};
-		} else {
-			//cout << "[parseNumber]" << "not a valid number: pos=" << pos << endl;
-			return {"not a valid number"};
-		}
-	}catch(exception& ex) {
-		//cout << "[parseNumber]" << "not a valid number: stoll ex" << endl;
-		return {"not a valid number"};
-	}
+
+    NumberE::Type   val;
+    auto cur        = rg.cur();
+    auto s          = cur.data(),   e = cur.data()+cur.size();
+    auto [pos, err] = std::from_chars(s, e, val);
+
+    if(pos == e) {
+        //cout << "[parseNumber]" << "parsed num: " << val->value_ << endl;
+        return {std::make_unique<NumberE>(val), rg+1};
+    } else {
+        //cout << "[parseNumber]" << "not a valid number: pos=" << pos << endl;
+        return {"not a valid number"};
+    }
 }
 
 Result<std::unique_ptr<Var>> parseVar(const Range& rg)
@@ -112,7 +98,7 @@ Result<std::unique_ptr<Var>> parseVar(const Range& rg)
 				return {};
 			default:
 				//cout << "[parseVar]" << "matched var: " << rg.cur() << endl;
-				return {make_unique<Var>(rg.cur()), rg+1};
+				return {make_unique<Var>(cur), rg+1};
 
 		}
 	}
@@ -134,14 +120,15 @@ Result<std::unique_ptr<Quote>> parseQuote(const Range& rg)
 Result<std::unique_ptr<Define>>  parseDef(const Range& rg)
 {
 	static auto defKw = Lit("define");
-	static auto manyVar = Many(parseVar);
-	static auto def1 = All(Common::lP, defKw, parseVar, parse, Common::rP) >> 
+    // (define <id> <expr>)
+	static auto def1 = All(Common::lP, defKw, parseVar, parseExp, Common::rP) >> 
 		[](unique_ptr<Var>&& v, Expr::Ptr&& body) 
 		{ 
 			return make_unique<Define>(std::move(*v), std::move(body)); 
 		};
 
-	static auto def2 = All(Common::lP, defKw, Common::lP, manyVar, Common::rP, parse, Common::rP) >>
+    // (define (<id>...) <expr>)
+	static auto def2 = All(Common::lP, defKw, Common::lP, Common::manyVar, Common::rP, parseExp, Common::rP) >>
 		[](vector<unique_ptr<Var>>&& vars, Expr::Ptr&& body)
 		{
 			vector<Var> params;
@@ -157,7 +144,7 @@ Result<std::unique_ptr<Define>>  parseDef(const Range& rg)
 Result<std::unique_ptr<SetBang>>  parseSetBang(const Range& rg)
 {
 	static auto setKw = Lit("set!");
-	static auto P = All(Common::lP, setKw, parseVar, parse, Common::rP) >> 
+	static auto P = All(Common::lP, setKw, parseVar, parseExp, Common::rP) >> 
 	[](unique_ptr<Var>&& var, unique_ptr<Expr>&& expr)
 	{
 		return make_unique<SetBang>(std::move(*var), std::move(expr));
@@ -169,7 +156,7 @@ Result<std::unique_ptr<SetBang>>  parseSetBang(const Range& rg)
 Result<std::unique_ptr<Begin>>  parseBegin(const Range& rg)
 {
 	static auto beginKw = Lit("begin");
-	static auto manyExp = MaybeMany(parse);
+	static auto manyExp = MaybeMany(parseExp);
 	static auto P = All(Common::lP, beginKw, manyExp, Common::rP) >>
 		[](vector<unique_ptr<Expr>> &&es)
 		{
@@ -182,7 +169,7 @@ Result<std::unique_ptr<Begin>>  parseBegin(const Range& rg)
 Result<std::unique_ptr<If>>  parseIf(const Range& rg)
 {
 	static auto ifKw = Lit("if");
-	static auto p = All(Common::lP, ifKw, parse, parse, parse, Common::rP) >>
+	static auto p = All(Common::lP, ifKw, parseExp, parseExp, parseExp, Common::rP) >>
 		[](Expr::Ptr&& pred, Expr::Ptr&& thn, Expr::Ptr&& els)
 		{
 			return std::make_unique<If>(std::move(pred), std::move(thn), std::move(els));
@@ -194,7 +181,7 @@ Result<std::unique_ptr<Lambda>>  parseLambda(const Range& rg)
 {
 
 	static auto lambda = Lit("lambda");
-	static auto P = All(Common::lP, lambda, Common::lP, Common::maybeManyVar, Common::rP, parse, Common::rP) >>
+	static auto P = All(Common::lP, lambda, Common::lP, Common::maybeManyVar, Common::rP, parseExp, Common::rP) >>
 		[](vector<unique_ptr<Var>>&& vars, Expr::Ptr&& body)
 		{
 			vector<Var> params;
@@ -204,26 +191,36 @@ Result<std::unique_ptr<Lambda>>  parseLambda(const Range& rg)
 	return P(rg);
 }
 
-Result<std::unique_ptr<Let>>  parseLet(const Range& rg)
+
+template<class Ast>
+Result<std::unique_ptr<Ast>>  parseLetLike(const Range& rg, const char* head)
 {
-	static auto let = Lit("let");
-	static auto bindPair = All(Common::lP, parseVar, parse, Common::rP);
+	static auto let = Lit(head);
+	static auto bindPair = All(Common::lP, parseVar, parseExp, Common::rP);
 	static auto binds = Many(bindPair);
 
-	static auto P = All(Common::lP, let, Common::lP, binds, Common::rP, parse, Common::rP) >> 
+	static auto P = All(Common::lP, let, Common::lP, binds, Common::rP, parseExp, Common::rP) >> 
 		[](vector<tuple<unique_ptr<Var>,Expr::Ptr>>&& binds, Expr::Ptr&& b)
 		{
 			vector<pair<Var, Expr::Ptr>> kvs;
 			for(auto& kv: binds) kvs.emplace_back(std::move(*get<0>(kv)), std::move(get<1>(kv)));
 
-			return make_unique<Let>(std::move(kvs), std::move(b));
+			return make_unique<Ast>(std::move(kvs), std::move(b));
 		};
 	return P(rg);
 }
 
+Result<std::unique_ptr<Let>>  parseLet(const Range& rg) {
+    return parseLetLike<Let>(rg, "let");
+}
+
+Result<std::unique_ptr<LetRec>>  parseLetRec(const Range& rg) {
+    return parseLetLike<LetRec>(rg, "letrec");
+}
+
 Result<std::unique_ptr<Apply>>  parseApply(const Range& rg)
 {
-	static auto manyExp = Many(parse);
+	static auto manyExp = Many(parseExp);
 	static auto P = All(Common::lP, manyExp, Common::rP) >>
 		[](vector<Expr::Ptr>&& es)
 		{

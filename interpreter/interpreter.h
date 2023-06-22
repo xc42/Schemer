@@ -17,7 +17,6 @@ public:
 
     static Ptr extend(const std::vector<std::pair<Var, Value::Ptr>> &binds, const Ptr& old);
 
-private:
     std::map<std::string, Value::Ptr> bindings_;
     Ptr outer_;
 };
@@ -69,6 +68,7 @@ private:
     void forBegin(const Begin& bgn) override{} //TODO
     void forIf(const If&) override;
 	void forLet(const Let&) override;
+	void forLetRec(const LetRec&) override;
     void forLambda(const Lambda & lambda) override { result_ = std::make_shared<Closure>(std::make_unique<Lambda>(lambda), env_);
 	}
     void forApply(const Apply&) override;
@@ -83,19 +83,19 @@ public:
 	ValuePrinter(std::ostream& os): os_(os) {}
 
 private:
-	void forNumber(const Number& n) override {  os_ << n.value_; }
+	void forNumber(const Number& n) override {  os_ << n.value_ << '\n'; }
 	void forBoolean(const Boolean& b) override {  
-		if(b.value_) os_ << "#t";
-		else os_ << "#f";
+		if(b.value_) os_ << "#t" << '\n';
+		else os_ << "#f" << '\n';
 	}
 
-	void forSymbol(const Symbol& s) override { os_ << *s.ptr_; }
+	void forSymbol(const Symbol& s) override { os_ << *s.ptr_ << '\n'; }
 
-	void forClosure(const Closure&) override { os_ << "#<closure>"; }
-	void forProcedure(const Procedure&) override { os_ << "#<procedure>"; }
+	void forClosure(const Closure&) override { os_ << "#<closure>" << '\n'; }
+	void forProcedure(const Procedure&) override { os_ << "#<procedure>" << '\n'; }
 	void forCons(const Cons&) override;
 	void forVoid(const Void&) override {}
-	void forNil(const Nil& n) override { os_ << "()"; }
+	void forNil(const Nil& n) override { os_ << "()" << '\n'; }
 
 	std::ostream &os_;
 };

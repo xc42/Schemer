@@ -10,7 +10,7 @@ static const auto FrontEndAllPasses = {CollectAssign::run};
 Result<unique_ptr<Program>> parseProg(const Range& rg)
 {
 	static auto Defs = MaybeMany(parseDef);
-	static auto prog = All(Defs, parse) >>
+	static auto prog = All(Defs, parseExp) >>
 		[](vector<unique_ptr<Define>>&& defs, Expr::Ptr&& body)
 		{
 			vector<Expr::Ptr> arg;

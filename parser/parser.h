@@ -6,11 +6,60 @@
 
 namespace Parser {
 
-std::vector<std::string> tokenize(const char *c);
+template<class Iter, class = std::enable_if_t<
+    std::is_same_v<char, typename std::iterator_traits<Iter>::value_type>>>
+std::vector<std::string_view> tokenize(Iter b, Iter e)
+{
+    enum class State {Start, Id};
+    State st = State::Start;
+
+	std::vector<std::string_view> tokens;
+    auto idStart = b;
+
+    auto acceptSpecials = [&](const char* c) {
+        if (st == State::Id) {
+            tokens.emplace_back(&*idStart, b - idStart);
+            st = State::Start;
+        }
+        tokens.emplace_back(c, 1);
+        idStart = b+1;
+    };
+	for ( ; b != e; ++b) {
+		switch(*b) {
+			case '(':
+			case ')':
+			case '.':
+			case '\'':
+                acceptSpecials(&*b);
+				break;
+			case '['://简单处理方括号
+                acceptSpecials("(");
+                break;
+			case ']'://简单处理方括号
+                acceptSpecials(")");
+                break;
+			default:
+                if (std::isspace(*b)) {
+                    if (st == State::Start) {
+                        idStart = b + 1;
+                    } else {
+                        tokens.emplace_back(&*idStart, b - idStart);
+                        st = State::Start;
+                    }
+                } else {
+                    if (st == State::Start) {
+                        idStart = b;
+                        st = State::Id;
+                    }
+                }
+		}
+	}
+	return tokens;
+}
 
 struct Range
 {
-	using Iter = std::vector<std::string>::iterator;
+	using Iter = std::vector<std::string_view>::iterator;
 public:
 	Range()=default;
 	Range(const Iter& start, const Iter& end): first(start), second(end) {}
@@ -75,10 +124,10 @@ public:
 	void setStatus(bool b) { succ_ = b; }
 
 private:
-	bool succ_;
-	RT value_;
-	Range rest_;
-	std::string err_;
+	bool            succ_;
+	RT              value_;
+	Range           rest_;
+	std::string     err_;
 };
 
 template<>
@@ -194,7 +243,8 @@ struct DatumPair: public Datum
 
 Result<Datum::Ptr> parseDatum(const Range&);
 
-Result<Expr::Ptr> parse(const Range&);
+Result<std::vector<Expr::Ptr>> parseProgram(const Range&);
+Result<Expr::Ptr> parseExp(const Range&);
 Result<std::unique_ptr<NumberE>> parseNumber(const Range&);
 Result<std::unique_ptr<Var>> parseVar(const Range&);
 Result<std::unique_ptr<Quote>> parseQuote(const Range&);
@@ -203,6 +253,7 @@ Result<std::unique_ptr<SetBang>>  parseSetBang(const Range&);
 Result<std::unique_ptr<Begin>>  parseBegin(const Range&);
 Result<std::unique_ptr<If>>  parseIf(const Range&);
 Result<std::unique_ptr<Let>>  parseLet(const Range&);
+Result<std::unique_ptr<LetRec>>  parseLetRec(const Range&);
 Result<std::unique_ptr<Lambda>>  parseLambda(const Range&);
 Result<std::unique_ptr<Apply>>  parseApply(const Range&);
 
@@ -309,7 +360,7 @@ static_assert(std::is_same_v<typename TupAcc<int>::type, std::tuple<int>>);
 template<typename T>
 using parse_result_t = typename std::invoke_result_t<T, const Range&>::value_type;
 
-static_assert(std::is_same_v<parse_result_t<decltype(parse)>, Expr::Ptr>);
+static_assert(std::is_same_v<parse_result_t<decltype(parseExp)>, Expr::Ptr>);
 static_assert(std::is_same_v<parse_result_t<decltype(parseVar)>, std::unique_ptr<Var>>);
 
 template<class P0, class P1, class ...Pn>

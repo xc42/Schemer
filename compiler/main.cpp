@@ -17,7 +17,7 @@ int main()
 	istream_iterator<char> inEnd;
 	string src(inBegin, inEnd);
 
-	auto tokens = Parser::tokenize(src.c_str());
+	auto tokens = Parser::tokenize(src.begin(), src.end());
 	auto prog = FrontEndPass::parseProg(Parser::Range(tokens.begin(),tokens.end()));
 
 	if(prog) {

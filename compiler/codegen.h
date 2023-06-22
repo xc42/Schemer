@@ -67,6 +67,7 @@ private:
     void forBegin(const Begin&) override;
     void forIf(const If&) override;
 	void forLet(const Let&) override;
+	void forLetRec(const LetRec&) override {} //TODO
     void forLambda(const Lambda&) override;
     void forApply(const Apply&) override;
 
