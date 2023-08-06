@@ -6,27 +6,6 @@ namespace Interp {
 using namespace std;
 using namespace Parser;
 
-Environment::Ptr Environment::extend(const std::vector<std::pair<Var, Value::Ptr>> &binds, const Environment::Ptr& old)
-{
-		auto newEnv = std::make_shared<Environment>();
-		newEnv->outer_ = old;
-		for(const auto& kv: binds)
-			newEnv->bind(kv.first, kv.second);
-		return newEnv;
-}
-
-Value::Ptr Environment::operator()(const Var& s)
-{
-	auto it = bindings_.find(s);
-	if( it != bindings_.end()) {
-		return it->second;
-	} else if(outer_) {
-		return (*outer_)(s);
-	}else {
-		throw std::runtime_error(std::string(s) + " : undefined");
-	}
-}
-
 
 Value::Ptr convertDatum(const Datum& dat)
 {
@@ -79,7 +58,7 @@ void Evaluator::forQuote(const Quote& quo)
 
 void Evaluator::forDefine(const Define &def) {
     def.body_->accept(*this);
-    env_->bind(def.name_, result_);
+    env_->bind(def.name_.v_, result_);
 	result_ = Void::getInstance();
 }
 
@@ -103,29 +82,28 @@ void Evaluator::forIf(const If &if_expr) {
 
 void Evaluator::forLet(const Let& let)
 {
-	vector<pair<Var, Value::Ptr>> binds;
+	auto newEnv = Environment::extend(env_);
 	for(const auto& kv: let.binds_) {
 		kv.second->accept(*this);
-		binds.emplace_back(kv.first, result_);
+        newEnv->bind(kv.first.v_, result_);
 	}
 
-	env_ = Environment::extend(binds, env_);
+    env_ = std::move(newEnv);
 	let.body_->accept(*this);
 }
 
 void Evaluator::forLetRec(const LetRec& letrec)
 {
-	vector<pair<Var, Value::Ptr>> binds;
 	for(const auto& kv: letrec.binds_) {
-		binds.emplace_back(kv.first, nullptr);
+		env_->bind(kv.first.v_, nullptr);
 	}
 
-	env_ = Environment::extend(binds, env_);
 
     for (const auto& kv: letrec.binds_) {
         kv.second->accept(*this);
-        env_->bindings_[kv.first] = std::move(result_);
+        env_->find(kv.first.v_) = std::move(result_);
     }
+
 	letrec.body_->accept(*this);
 }
 
@@ -148,14 +126,14 @@ void Evaluator::forApply(const Apply &app) {
 		checkArityExact(clos->arity(), rands.size());
 		
 		const auto& lam = *clos->lambda_;
-		vector<pair<Var, Value::Ptr>> binds;
 		const auto& params = *lam.params_;
-		for(int i = 0; i < params.size(); ++i) 
-			binds.emplace_back(params[i], rands[i]);
 
-		Evaluator newEv( Environment::extend(binds, clos->env_) );
-		lam.body_->accept(newEv);
-		result_ = newEv.getResult();
+        env_ = Environment::extend(env_);
+		for(int i = 0; i < params.size(); ++i) {
+			env_->bind(params[i].v_, std::move(rands[i]));
+        }
+
+		lam.body_->accept(*this);
 	}else {
 		auto proc = static_pointer_cast<Procedure>(rator);
 		result_ = proc->func_(rands);
@@ -226,7 +204,7 @@ Value::Ptr eqq(const Args& args) {
 	return make_unique<Boolean>(eq);
 }
 
-Environment::Ptr getInitialTopEnv()
+EnvironmentPtr getInitialTopEnv()
 {
     auto env = std::make_shared<Environment>();
 

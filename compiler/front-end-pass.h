@@ -10,49 +10,6 @@
 namespace FrontEndPass
 {
 
-class DefaultRecur: public VisitorE
-{
-public:
-    virtual void forNumber(const NumberE&) override {}
-    virtual void forBoolean(const BooleanE&) override {}
-    virtual void forVar(const Var&) override {}
-    virtual void forQuote(const Quote&) override {}
-    virtual void forDefine(const Define& def) override { def.body_->accept(*this); }
-    virtual void forSetBang(const SetBang& setBang) override { 
-		setBang.v_.accept(*this);
-		setBang.e_->accept(*this); 
-	}
-    virtual void forBegin(const Begin& bgn) override { for(const auto& e: bgn.es_) e->accept(*this); }
-    virtual void forIf(const If& ifExpr) override { 
-		ifExpr.pred_->accept(*this);
-		ifExpr.thn_->accept(*this);
-		ifExpr.els_->accept(*this);
-	}
-    template<class Let>
-    void forLetLike(const Let& let) {
-		for(const auto& kv: let.binds_) {
-			kv.second->accept(*this);
-		}
-		let.body_->accept(*this);
-    }
-	virtual void forLet(const Let& let) override {
-        forLetLike(let);
-	}
-	virtual void forLetRec(const LetRec& letrec) override {
-        forLetLike(letrec);
-	}
-
-    virtual void forLambda(const Lambda& lam) override { lam.body_->accept(*this); }
-
-    virtual void forApply(const Apply& app) override {
-		app.operator_->accept(*this);
-		for(const auto& arg: app.operands_) {
-			arg->accept(*this);
-		}
-	}
-
-};
-
 /*
 template<class FoldFn>
 struct FoldExpr : public VisitorE 
@@ -101,7 +58,7 @@ private:
 	std::list<Pair> defs_;
 };
 
-class CollectAssign: public DefaultRecur
+class CollectAssign: public ExprMapper
 {
 public:
     void forSetBang(const SetBang& setBang) override { 

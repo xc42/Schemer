@@ -3,6 +3,7 @@
 #include "ast.h"
 #include <functional>
 #include <unordered_set>
+#include "environment.h"
 
 namespace Interp
 {
@@ -54,19 +55,18 @@ struct Symbol: public Value {
     const std::string *ptr_; //do not need free, handled elsewhere
 };
 
-class Environment;
 struct Closure: public Value {
-	Closure(std::unique_ptr<Lambda> lam, const std::shared_ptr<Environment> &env): 
+	Closure(std::unique_ptr<Lambda> lam, Environment<Value::Ptr>::Ptr env): 
 		Value(Value::Type::Closure),
-		lambda_(std::move(lam)), env_(env){}
+		lambda_(std::move(lam)), env_(std::move(env)){}
 
 
     void accept(VisitorV &v) const override;
 
 	int arity() { return lambda_->arity(); }
 
-	std::unique_ptr<Lambda> lambda_;
-	std::shared_ptr<Environment> env_;
+	std::unique_ptr<Lambda>             lambda_;
+    Environment<Value::Ptr>::Ptr        env_;
 };
 
 

@@ -7,7 +7,7 @@
 using namespace std;
 using namespace Interp;
 
-void repl(const Environment::Ptr env) {
+void repl(const EnvironmentPtr env) {
     const std::string input_promt{"~> "};
     Evaluator eval(env);
 	ValuePrinter printer(cout);

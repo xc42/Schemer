@@ -2,25 +2,15 @@
 
 #include "ast.h"
 #include "value.h"
+#include "environment.h"
 #include "fmt/core.h"
 #include <numeric>
+#include <string_view>
 
 namespace Interp {
 
-class Environment {
-public:
-    using Ptr = std::shared_ptr<Environment>;
-
-    void bind(const std::string& name, const Value::Ptr& val) { bindings_[name] = val; }
-    void bind(const Var& v, const Value::Ptr& val) { bindings_[v.v_] = val; }
-	Value::Ptr operator()(const Var& s);
-
-    static Ptr extend(const std::vector<std::pair<Var, Value::Ptr>> &binds, const Ptr& old);
-
-    std::map<std::string, Value::Ptr> bindings_;
-    Ptr outer_;
-};
-
+using EnvironmentPtr    = Environment<Value::Ptr>::Ptr;
+using Environment       = Environment<Value::Ptr>;
 
 inline bool checkArityExact(int expect, int actual)
 {
@@ -48,11 +38,10 @@ inline bool checkValueType(const Value::Ptr& v, Value::Type t)
 
 class Evaluator: public VisitorE {
 public:
-    Evaluator():
-		env_(std::make_shared<Environment>())
+    Evaluator(): env_(std::make_shared<Environment>())
 	{}
 
-    Evaluator(const Environment::Ptr& env): env_(env){}
+    Evaluator(const EnvironmentPtr& env): env_(env){}
 
 
     Value::Ptr getResult() { return result_; }
@@ -61,7 +50,7 @@ public:
 private:
     void forNumber(const NumberE& num) override { result_ = std::make_unique<Number>(num.value_); }
     void forBoolean(const BooleanE& b) override { result_ = std::make_unique<Boolean>(b.b_); }
-    void forVar(const Var& s) override { result_ = (*env_)(s); };
+    void forVar(const Var& s) override { result_ = env_->find(s.v_); };
     void forQuote(const Quote& quo) override;
     void forDefine(const Define& def) override;
     void forSetBang(const SetBang& setBang) override;

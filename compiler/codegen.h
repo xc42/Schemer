@@ -115,7 +115,7 @@ private:
 
 };
 
-class FreeVarScanner: public FrontEndPass::DefaultRecur
+class FreeVarScanner: public ExprMapper
 {
 public:
 	FreeVarScanner(const llvm::Module& m): module_(m) {}
