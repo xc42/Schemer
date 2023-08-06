@@ -64,8 +64,8 @@ private:
     void forVar(const Var& s) override { result_ = (*env_)(s); };
     void forQuote(const Quote& quo) override;
     void forDefine(const Define& def) override;
-    void forSetBang(const SetBang& setBang) override {} //TODO
-    void forBegin(const Begin& bgn) override{} //TODO
+    void forSetBang(const SetBang& setBang) override;
+    void forBegin(const Begin& bgn) override;
     void forIf(const If&) override;
 	void forLet(const Let&) override;
 	void forLetRec(const LetRec&) override;
@@ -83,19 +83,19 @@ public:
 	ValuePrinter(std::ostream& os): os_(os) {}
 
 private:
-	void forNumber(const Number& n) override {  os_ << n.value_ << '\n'; }
+	void forNumber(const Number& n) override {  os_ << n.value_; }
 	void forBoolean(const Boolean& b) override {  
-		if(b.value_) os_ << "#t" << '\n';
-		else os_ << "#f" << '\n';
+		if(b.value_) os_ << "#t";
+		else os_ << "#f";
 	}
 
-	void forSymbol(const Symbol& s) override { os_ << *s.ptr_ << '\n'; }
+	void forSymbol(const Symbol& s) override { os_ << *s.ptr_; }
 
-	void forClosure(const Closure&) override { os_ << "#<closure>" << '\n'; }
-	void forProcedure(const Procedure&) override { os_ << "#<procedure>" << '\n'; }
+	void forClosure(const Closure&) override { os_ << "#<closure>"; }
+	void forProcedure(const Procedure&) override { os_ << "#<procedure>"; }
 	void forCons(const Cons&) override;
 	void forVoid(const Void&) override {}
-	void forNil(const Nil& n) override { os_ << "()" << '\n'; }
+	void forNil(const Nil& n) override { os_ << "()"; }
 
 	std::ostream &os_;
 };

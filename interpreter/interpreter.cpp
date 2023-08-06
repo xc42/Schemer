@@ -83,6 +83,13 @@ void Evaluator::forDefine(const Define &def) {
 	result_ = Void::getInstance();
 }
 
+void Evaluator::forSetBang(const SetBang& setBang) {
+    
+}
+
+void Evaluator::forBegin(const Begin& bgn) {
+}
+
 void Evaluator::forIf(const If &if_expr) {
     if_expr.pred_->accept(*this);
     if((result_->type_ == Value::Type::Boolean && static_pointer_cast<Boolean>(result_)->value_ == false) ||
@@ -156,7 +163,7 @@ void Evaluator::forApply(const Apply &app) {
 }
 
 void ValuePrinter::forCons(const Cons& cc) {
-	os_ << "(";
+	os_ << "'(";
 	cc.car_->accept(*this);
 	auto it = cc.cdr_.get();
 swloop:

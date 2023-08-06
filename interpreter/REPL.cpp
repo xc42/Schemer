@@ -1,7 +1,8 @@
 #include "parser.h"
 #include "interpreter.h"
 #include <iostream>
-#include <optional>
+#include <fstream>
+//#include <optional>
 
 using namespace std;
 using namespace Interp;
@@ -42,6 +43,7 @@ void repl(const Environment::Ptr env) {
             try { //eval
                 expr.getValue()->accept(eval);
 				eval.getResult()->accept(printer);
+                cout << endl;
             } catch(std::exception &e) {
                 std::cerr << e.what() << "\n" ;
             }
@@ -75,17 +77,25 @@ void evalSource(const string& src) {
 
 int main(int argc, char *argv[])
 {
-    auto hasOpt = [b = argv, e = argv+argc](string_view opt) {
-        char **it = std::find_if(b, e, [&](const char* arg) { return arg == opt; });
-        return it != e;
+    auto argBegin = argv,  argEnd = argv + argc;
+    auto hasOpt = [&](string_view opt, bool next=false) -> char* {
+        char **it = std::find_if(argBegin, argEnd, [&](const char* arg) { return arg == opt; });
+        if (it != argEnd) {
+            return next? (it + 1 != argEnd? *(it+1): nullptr): *it;
+        } else {
+            return nullptr;
+        }
     };
 
 
-    bool evalCode = hasOpt("-e");
-    if (evalCode) { //read code from stdin
+    if (hasOpt("-e")) { //read code from stdin
         string src{std::istreambuf_iterator<char>(cin), {}};
         evalSource(src);
-    } else { // enter read-eval-print-loop
+    } else if (auto filepath = hasOpt("-f", true)) {
+        ifstream ifs(filepath);
+        string src{std::istreambuf_iterator<char>(ifs), {}};
+        evalSource(src);
+    }else { // enter read-eval-print-loop
         repl(builtin::getInitialTopEnv());
     }
 }
