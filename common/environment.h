@@ -19,7 +19,7 @@ public:
         if( it != _bindings.end()) {
             return it->second;
         } else if(_outer) {
-            return (*_outer)(var);
+            return _outer->find(var);
         }else {
             throw std::runtime_error(fmt::format("`{}` undefined", var));
         }

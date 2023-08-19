@@ -64,12 +64,31 @@ void Compiler::forLambda(const Lambda& lam) {
     for (const auto& v: *lam.params_) {
         envEx->bind(v.v_, loc++);
     }
-    _code = Instr::New<Closure>( compile( *lam.body_, envEx, Instr::New<Ret>(lam.params_->size(), _cont)));
+    auto bodyc = compile(*lam.body_, envEx, Instr::New<Ret>(lam.params_->size(), _cont));
+    _code      = Instr::New<Closure>(bodyc, _cont);
 }
 
 void Compiler::forApply(const Apply& app) {
     // eval args from left to right, then eval operator at last 
-    auto nxt = compile(*app.operator_, _env, Instr::New<Jmp>());
+    auto compilePrim = [&](const auto& expr) -> Instr::Ptr {
+        if (expr->getType() != Expr::Type::Var) return nullptr;
+        const auto& var = static_cast<const Var&>(*expr);
+        const auto& op  = var.v_;
+        return op == "+"?  Instr::New<Prim>(Instr::Op::ADD, _cont):
+               op == "-"?  Instr::New<Prim>(Instr::Op::SUB, _cont):
+               op == "*"?  Instr::New<Prim>(Instr::Op::MUL, _cont):
+               op == "*"?  Instr::New<Prim>(Instr::Op::DIV, _cont):
+               op == "%"?  Instr::New<Prim>(Instr::Op::MOD, _cont):
+               op == "<"?  Instr::New<Prim>(Instr::Op::LT, _cont):
+               op == "<="? Instr::New<Prim>(Instr::Op::LE, _cont):
+               op == "=="? Instr::New<Prim>(Instr::Op::EQ, _cont):
+               op == ">"?  Instr::New<Prim>(Instr::Op::GT, _cont):
+               op == ">="? Instr::New<Prim>(Instr::Op::GE, _cont):
+               op == "!="? Instr::New<Prim>(Instr::Op::NEQ, _cont): nullptr;
+    };
+
+    auto primInstr  = compilePrim(app.operator_);
+    auto nxt        = primInstr? primInstr: compile(*app.operator_, _env, Instr::New<Jmp>());
     for (auto rit = app.operands_.rbegin(); rit != app.operands_.rend(); ++rit) {
         nxt = compile(**rit, _env, Instr::New<Push>(std::move(nxt)));
     }

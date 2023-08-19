@@ -86,7 +86,7 @@ void ExprCodeGen::forSetBang(const SetBang& setBang)
 {
 	setBang.e_->accept(*this);
 
-	Value* var = nullptr;
+    llvm::Value* var = nullptr;
 	auto it = table_.find(setBang.v_.v_);
 	if(it != table_.end()) {
 		var = it->second;
@@ -109,7 +109,7 @@ void ExprCodeGen::forIf(const If& ifExp)
 {
 	ifExp.pred_->accept(*this);
 
-	Value* condV = nullptr;
+    llvm::Value* condV = nullptr;
 	if(value_->getType()->getIntegerBitWidth() == 1) {
 		condV = value_;
 	}else { //assert schemeValType
@@ -204,7 +204,7 @@ void ExprCodeGen::forLambda(const Lambda& lam)
 
 	//codgen of closure
 	auto allocCloFunc = module_.getFunction("schemeAllocateClosure");
-	vector<Value*> args;
+	vector<llvm::Value*> args;
 	args.emplace_back( builder_.CreateBitCast(lambdaFn, Type::getInt8PtrTy(ctx_), "lambdaPtr"));
 	args.emplace_back(ConstantInt::getSigned(IntegerType::get(ctx_, 32), lam.arity()));
 	args.emplace_back(ConstantInt::getSigned(IntegerType::get(ctx_, 32), fvs.size()));

@@ -5,7 +5,6 @@
 
 class VirtualMachine: public InstrVisitor {
 public:
-    using Value = Interp::Value;
 
     static Value::Ptr execute(Instr::Ptr  instr) {
         VirtualMachine vm;
@@ -18,6 +17,7 @@ private:
     virtual void forImm(const Imm&) override;
     virtual void forPrim(const Prim&) override;
     virtual void forMemRef(const MemRef&) override;
+    virtual void forMemSet(const MemSet&) override;
     virtual void forBranch(const Branch&) override;
     virtual void forPush(const Push&) override;
     virtual void forClosure(const Closure&) override;

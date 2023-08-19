@@ -16,8 +16,11 @@ struct Expr {
     enum class Type {Number, Boolean, Var, Quote, Define, SetBang, Begin, Let, If, Lambda, Apply} type_;
 
     Expr(Type t):type_(t){}
-    virtual void accept(VisitorE& visitor) const = 0;
     virtual ~Expr()=default;
+
+    Type getType() const { return type_; }
+
+    virtual void accept(VisitorE& visitor) const = 0;
 };
 
 struct NumberE: Expr{
