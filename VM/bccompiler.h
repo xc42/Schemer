@@ -4,10 +4,10 @@
 #include "bytecode.h"
 #include "environment.h"
 
-class Compiler: VisitorE {
+class ByteCodeCompiler: VisitorE {
 public:
-    Compiler(Instr::Ptr cont): _cont(std::move(cont)) {}
-    static Instr::Ptr Compile(Expr::Ptr expr);
+    ByteCodeCompiler(Instr::Ptr cont = Instr::New<Halt>()): _cont(std::move(cont)) {}
+    static Instr::Ptr Compile(Expr& expr);
 private:
     virtual void forNumber(const NumberE&) override;
     virtual void forBoolean(const BooleanE&) override;

@@ -3,10 +3,12 @@
 
 void VirtualMachine::forHalt(const Halt& instr) {
     // halt
+    _ip = nullptr;
 }
 
 void VirtualMachine::forImm(const Imm& instr) {
-    _acc = instr.getVal();
+    _acc    = instr.getVal();
+    _ip     = instr.getNext().get();
 }
 
 void VirtualMachine::forPrim(const Prim& instr) {
@@ -55,18 +57,56 @@ void VirtualMachine::forPrim(const Prim& instr) {
             throw std::runtime_error(fmt::format("internal error, unexpected primitive operator {}",  static_cast<int>(instr.getOpCode())));
         }
     }
+    _ip = instr.getNext().get();
 }
 
 void VirtualMachine::forMemRef(const MemRef& instr) {
 
+    // TODO
 }
 
 void VirtualMachine::forMemSet(const MemSet& instr) {
 
+    // TODO
 }
-void VirtualMachine::forBranch(const Branch& instr) {}
-void VirtualMachine::forPush(const Push& instr) {}
-void VirtualMachine::forClosure(const Closure& instr) {}
-void VirtualMachine::forFrame(const Frame& instr) {}
-void VirtualMachine::forJmp(const Jmp& instr) {}
-void VirtualMachine::forRet(const Ret& instr) {}
+
+void VirtualMachine::forBranch(const Branch& instr) {
+
+    // TODO
+}
+
+
+void VirtualMachine::forPush(const Push& instr) {
+    _stack.emplace_back(_acc);
+    _ip = instr.getNext().get();
+}
+
+void VirtualMachine::forPop(const Pop& instr) {
+    _stack.resize(_stack.size() - instr.getNum());
+    _ip = instr.getNext().get();
+}
+
+void VirtualMachine::forClosure(const Closure& instr) {
+    // TODO
+    _ip = instr.getNext().get();
+}
+
+void VirtualMachine::forFrame(const Frame& instr) {
+    // TODO
+    _ip = instr.getNext().get();
+}
+
+void VirtualMachine::forJmp(const Jmp& instr) {
+    if (_acc->getType() != Value::Type::Closure) 
+        throw std::runtime_error("VM error: expect a closure");
+
+    // TODO
+    //auto& clo   = static_cast<VM::Closure&>(*_acc);
+
+}
+
+void VirtualMachine::forRet(const Ret& instr) {
+    // TODO
+    _ip = instr.getNext().get();
+
+}

@@ -16,13 +16,11 @@ std::vector<std::string_view> tokenize(Iter b, Iter e)
 	std::vector<std::string_view> tokens;
     auto idStart = b;
 
-    auto acceptSpecials = [&](const char* c) {
+    auto endOfId = [&]() {
         if (st == State::Id) {
             tokens.emplace_back(&*idStart, b - idStart);
             st = State::Start;
         }
-        tokens.emplace_back(c, 1);
-        idStart = b+1;
     };
 	for ( ; b != e; ++b) {
 		switch(*b) {
@@ -30,13 +28,19 @@ std::vector<std::string_view> tokenize(Iter b, Iter e)
 			case ')':
 			case '.':
 			case '\'':
-                acceptSpecials(&*b);
+                endOfId();
+                tokens.emplace_back(&*b, 1);
+                idStart = b+1;
 				break;
 			case '['://简单处理方括号
-                acceptSpecials("(");
+                endOfId();
+                tokens.emplace_back("(");
+                idStart = b+1;
                 break;
 			case ']'://简单处理方括号
-                acceptSpecials(")");
+                endOfId();
+                tokens.emplace_back(")");
+                idStart = b+1;
                 break;
 			default:
                 if (std::isspace(*b)) {
@@ -54,6 +58,8 @@ std::vector<std::string_view> tokenize(Iter b, Iter e)
                 }
 		}
 	}
+    endOfId();
+
 	return tokens;
 }
 

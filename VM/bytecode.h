@@ -15,6 +15,7 @@ public:
         Set,
         Branch,
         Push,
+        Pop,
         Closure,
         Frame,
         Jmp,
@@ -44,6 +45,34 @@ public:
     virtual void accept(InstrVisitor&) = 0;
 
     auto getOpCode() const { return _op; }
+
+    static std::string_view to_string(Op op) {
+        switch (op) {
+            case Op::Halt:      return "halt";
+            case Op::Imm:       return "imm";
+            case Op::Ref:       return "mread";
+            case Op::Set:       return "mset";
+            case Op::Branch:    return "branch";
+            case Op::Push:      return "push";
+            case Op::Pop:       return "pop";
+            case Op::Closure:   return "closure";
+            case Op::Frame:     return "frame";
+            case Op::Jmp:       return "jmp";
+            case Op::Ret:       return "ret";
+            case Op::ADD:       return "add";
+            case Op::SUB:       return "sub";
+            case Op::MUL:       return "mul";
+            case Op::DIV:       return "div";
+            case Op::MOD:       return "mod";
+            case Op::LT:        return "lt";
+            case Op::LE:        return "le";
+            case Op::EQ:        return "eq";
+            case Op::GT:        return "gt";
+            case Op::GE:        return "ge";
+            case Op::NEQ:       return "neq";
+            default:            return "unkown-instr";
+        }
+    }
 private:
     Op _op;
 };
@@ -65,6 +94,8 @@ public:
     virtual ~Imm()=default;
 
     const auto getVal() const { return _value; }
+    const auto& getNext() const { return _next; }
+
     virtual void accept(InstrVisitor&) override;
 private:
 
@@ -77,6 +108,8 @@ public:
     Prim(Op op, Ptr nxt): Instr(op), _next(std::move(nxt)) {}
     virtual ~Prim()=default;
 
+    const auto& getNext() const { return _next; }
+
     virtual void accept(InstrVisitor&) override;
 private:
 
@@ -88,6 +121,7 @@ public:
     MemRef(int offset, Ptr nxt): Instr(Op::Ref), _offset(offset), _next(std::move(nxt)) {}
     virtual ~MemRef()=default;
 
+    const auto& getNext() const { return _next; }
     int getOffSet() const { return _offset; }
     virtual void accept(InstrVisitor&) override;
 
@@ -102,6 +136,7 @@ public:
     MemSet(int offset, Value::Ptr v, Ptr nxt): Instr(Op::Set), _value(std::move(v)), _next(std::move(nxt)) {}
     virtual ~MemSet()=default;
 
+    const auto& getNext() const { return _next; }
     virtual void accept(InstrVisitor&) override;
 private:
 
@@ -114,6 +149,9 @@ class Branch: public Instr {
 public:
     Branch(Ptr t, Ptr f): Instr(Op::Branch), _true(std::move(t)), _false(std::move(f)) { }
     virtual ~Branch()=default;
+
+    const auto& getTrue() const { return _true; }
+    const auto& getFalse() const { return _false; }
 
     virtual void accept(InstrVisitor&) override;
 private:
@@ -128,9 +166,26 @@ public:
     Push(Ptr nxt): Instr(Op::Push), _next(std::move(nxt)) {}
     virtual ~Push()=default;
 
+    const auto& getNext() const { return _next; }
     virtual void accept(InstrVisitor&) override;
 private:
 
+    Ptr                 _next;
+};
+
+class Pop: public Instr {
+public:
+    Pop(Ptr nxt): Instr(Op::Pop), _n(1), _next(std::move(nxt)) {}
+    Pop(size_t n, Ptr nxt): Instr(Op::Pop), _n(n), _next(std::move(nxt)) {}
+    virtual ~Pop()=default;
+
+    size_t getNum() const { return _n; }
+
+    const auto& getNext() const { return _next; }
+    virtual void accept(InstrVisitor&) override;
+private:
+
+    size_t              _n;
     Ptr                 _next;
 };
 
@@ -138,6 +193,9 @@ class Closure: public Instr {
 public:
     Closure(Ptr code, Ptr nxt): Instr(Op::Closure), _code(std::move(code)), _next(std::move(nxt)) {}
     virtual ~Closure()=default;
+
+    const auto& getCode() const { return _code; }
+    const auto& getNext() const { return _next; }
 
     virtual void accept(InstrVisitor&) override;
 private:
@@ -150,6 +208,8 @@ class Frame: public Instr {
 public:
     Frame(Ptr nxt): Instr(Op::Frame), _next(std::move(nxt)) {}
     virtual ~Frame()=default;
+
+    const auto& getNext() const { return _next; }
 
     virtual void accept(InstrVisitor&) override;
 private:
@@ -170,6 +230,10 @@ public:
     Ret(int n, Ptr nxt): Instr(Op::Ret), _popn(n), _next(std::move(nxt)) {}
     virtual ~Ret()=default;
 
+    int getPop() const { return _popn; }
+
+    const auto& getNext() const { return _next; }
+
     virtual void accept(InstrVisitor&) override;
 private:
 
@@ -186,6 +250,7 @@ public:
     virtual void forMemSet(const MemSet&) = 0;
     virtual void forBranch(const Branch&) = 0;
     virtual void forPush(const Push&) = 0;
+    virtual void forPop(const Pop&) = 0;
     virtual void forClosure(const Closure&) = 0;
     virtual void forFrame(const Frame&) = 0;
     virtual void forJmp(const Jmp&) = 0;
@@ -198,9 +263,9 @@ inline void Prim::accept(InstrVisitor& v) { v.forPrim(*this); }
 inline void MemRef::accept(InstrVisitor& v) { v.forMemRef(*this); }
 inline void Branch::accept(InstrVisitor& v) { v.forBranch(*this); }
 inline void Push::accept(InstrVisitor& v) { v.forPush(*this); }
+inline void Pop::accept(InstrVisitor& v) { v.forPop(*this); }
 inline void Closure::accept(InstrVisitor& v) { v.forClosure(*this); }
 inline void Frame::accept(InstrVisitor& v) { v.forFrame(*this); }
 inline void Jmp::accept(InstrVisitor& v) { v.forJmp(*this); }
 inline void Ret::accept(InstrVisitor& v) { v.forRet(*this); }
-
 

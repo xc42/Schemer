@@ -204,7 +204,7 @@ Value::Ptr eqq(const Args& args) {
 	return make_unique<Boolean>(eq);
 }
 
-EnvironmentPtr getInitialTopEnv()
+EnvironmentPtr initTopEnv()
 {
     auto env = std::make_shared<Environment>();
 

@@ -41,7 +41,7 @@ public:
     Evaluator(): env_(std::make_shared<Environment>())
 	{}
 
-    Evaluator(const EnvironmentPtr& env): env_(env){}
+    Evaluator(const EnvironmentPtr env): env_(std::move(env)){}
 
 
     Value::Ptr getResult() { return result_; }
@@ -133,6 +133,7 @@ public:
 private:
 };
 
-Environment::Ptr getInitialTopEnv();
+EnvironmentPtr initTopEnv();
+
 } //namespace builtin
 } //namespace Interp
