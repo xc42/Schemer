@@ -23,7 +23,7 @@ protected:
     virtual void forPop(const Pop&) override;
     virtual void forClosure(const Closure&) override;
     virtual void forFrame(const Frame&) override;
-    virtual void forJmp(const Jmp&) override;
+    virtual void forCall(const Call&) override;
     virtual void forRet(const Ret&) override;
 
 private:

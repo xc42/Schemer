@@ -87,18 +87,19 @@ void InstrDumper::forClosure(const Closure& instr) {
 
 void InstrDumper::forFrame(const Frame& instr) {
     dumpInstrAddr(&instr);
-    _os << "frame";
+    _os << "frame " << instr.getRet().get() <<  endl;
+    _worklist.push(instr.getRet().get());
     _next = instr.getNext().get();
 }
 
-void InstrDumper::forJmp(const Jmp& instr) {
+void InstrDumper::forCall(const Call& instr) {
     dumpInstrAddr(&instr);
-    _os << "jmp" << endl;
+    _os << "call" << endl;
     _next = nullptr;
 }
 
 void InstrDumper::forRet(const Ret& instr) {
     dumpInstrAddr(&instr);
-    _os << "ret " << instr.getPop() << " " << instr.getNext().get() << endl;
+    _os << "ret " << instr.getPop() << endl;
     _next = nullptr;
 }

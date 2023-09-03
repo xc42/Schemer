@@ -32,10 +32,12 @@ private:
     virtual void forPop(const Pop&) override;
     virtual void forClosure(const Closure&) override;
     virtual void forFrame(const Frame&) override;
-    virtual void forJmp(const Jmp&) override;
+    virtual void forCall(const Call&) override;
     virtual void forRet(const Ret&) override;
 
     std::vector<Value::Ptr>             _stack; // evalution stack
+    std::vector<int>                    _bps; // statck base pointers of call frames
+    std::vector<Instr*>                 _returnAddr; 
 
     //registers
     int                                 _bp; // stack base pointer

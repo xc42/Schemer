@@ -60,11 +60,11 @@ void ByteCodeCompiler::forLetRec(const LetRec&) {}
 
 void ByteCodeCompiler::forLambda(const Lambda& lam) {
     auto envEx = _env->extend(_env);
-    int loc = 0;
+    int loc = -lam.arity();
     for (const auto& v: *lam.params_) {
         envEx->bind(v.v_, loc++);
     }
-    auto bodyc = compile(*lam.body_, envEx, Instr::New<Ret>(lam.params_->size(), _cont));
+    auto bodyc = compile(*lam.body_, envEx, Instr::New<Ret>(lam.params_->size()));
     _code      = Instr::New<Closure>(bodyc, _cont);
 }
 
@@ -78,7 +78,7 @@ void ByteCodeCompiler::forApply(const Apply& app) {
         return op == "+"?  Instr::New<Prim>(Instr::Op::ADD, cont):
                op == "-"?  Instr::New<Prim>(Instr::Op::SUB, cont):
                op == "*"?  Instr::New<Prim>(Instr::Op::MUL, cont):
-               op == "*"?  Instr::New<Prim>(Instr::Op::DIV, cont):
+               op == "/"?  Instr::New<Prim>(Instr::Op::DIV, cont):
                op == "%"?  Instr::New<Prim>(Instr::Op::MOD, cont):
                op == "<"?  Instr::New<Prim>(Instr::Op::LT,  cont):
                op == "<="? Instr::New<Prim>(Instr::Op::LE,  cont):
@@ -89,11 +89,11 @@ void ByteCodeCompiler::forApply(const Apply& app) {
     };
 
     auto primInstr  = compilePrim(app.operator_);
-    auto nxt        = primInstr? primInstr: compile(*app.operator_, _env, Instr::New<Jmp>());
+    auto nxt        = primInstr? primInstr: compile(*app.operator_, _env, Instr::New<Call>());
     for (auto rit = app.operands_.rbegin(); rit != app.operands_.rend(); ++rit) {
         nxt = compile(**rit, _env, Instr::New<Push>(std::move(nxt)));
     }
 
-    if (!primInstr) _code = Instr::New<Frame>(std::move(nxt));
+    if (!primInstr) _code = Instr::New<Frame>(_cont, std::move(nxt));
 }
 

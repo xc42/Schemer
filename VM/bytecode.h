@@ -18,7 +18,7 @@ public:
         Pop,
         Closure,
         Frame,
-        Jmp,
+        Call,
         Ret,
         ADD,
         SUB,
@@ -57,7 +57,7 @@ public:
             case Op::Pop:       return "pop";
             case Op::Closure:   return "closure";
             case Op::Frame:     return "frame";
-            case Op::Jmp:       return "jmp";
+            case Op::Call:       return "jmp";
             case Op::Ret:       return "ret";
             case Op::ADD:       return "add";
             case Op::SUB:       return "sub";
@@ -206,20 +206,22 @@ private:
 
 class Frame: public Instr {
 public:
-    Frame(Ptr nxt): Instr(Op::Frame), _next(std::move(nxt)) {}
+    Frame(Ptr ret, Ptr nxt): Instr(Op::Frame), _return(std::move(ret)), _next(std::move(nxt)) {}
     virtual ~Frame()=default;
 
     const auto& getNext() const { return _next; }
+    const auto& getRet() const  { return _return; }
 
     virtual void accept(InstrVisitor&) override;
 private:
     Ptr                 _next;
+    Ptr                 _return;
 };
 
-class Jmp: public Instr {
+class Call: public Instr {
 public:
-    Jmp(): Instr(Op::Jmp) {}
-    virtual ~Jmp()=default;
+    Call(): Instr(Op::Call) {}
+    virtual ~Call()=default;
 
     virtual void accept(InstrVisitor&) override;
 private:
@@ -227,18 +229,15 @@ private:
 
 class Ret: public Instr {
 public:
-    Ret(int n, Ptr nxt): Instr(Op::Ret), _popn(n), _next(std::move(nxt)) {}
+    Ret(int n): Instr(Op::Ret), _popn(n) {}
     virtual ~Ret()=default;
 
     int getPop() const { return _popn; }
-
-    const auto& getNext() const { return _next; }
 
     virtual void accept(InstrVisitor&) override;
 private:
 
     int                 _popn;
-    Ptr                 _next; // return address
 };
 
 class InstrVisitor {
@@ -253,7 +252,7 @@ public:
     virtual void forPop(const Pop&) = 0;
     virtual void forClosure(const Closure&) = 0;
     virtual void forFrame(const Frame&) = 0;
-    virtual void forJmp(const Jmp&) = 0;
+    virtual void forCall(const Call&) = 0;
     virtual void forRet(const Ret&) = 0;
 };
 
@@ -266,6 +265,6 @@ inline void Push::accept(InstrVisitor& v) { v.forPush(*this); }
 inline void Pop::accept(InstrVisitor& v) { v.forPop(*this); }
 inline void Closure::accept(InstrVisitor& v) { v.forClosure(*this); }
 inline void Frame::accept(InstrVisitor& v) { v.forFrame(*this); }
-inline void Jmp::accept(InstrVisitor& v) { v.forJmp(*this); }
+inline void Call::accept(InstrVisitor& v) { v.forCall(*this); }
 inline void Ret::accept(InstrVisitor& v) { v.forRet(*this); }
 

@@ -102,9 +102,9 @@ public:
 
 } //namespace Interp
 
+class Instr;
 namespace VM
 {
-class Instr;
 struct Closure: public Value {
     Closure(std::shared_ptr<Instr> c): Value(Type::Closure), _code(std::move(c)) {}
     
