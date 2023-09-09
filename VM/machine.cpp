@@ -66,7 +66,6 @@ void VirtualMachine::forMemRef(const MemRef& instr) {
 }
 
 void VirtualMachine::forMemSet(const MemSet& instr) {
-
     // TODO
 }
 

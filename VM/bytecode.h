@@ -133,15 +133,15 @@ private:
 
 class MemSet: public Instr {
 public:
-    MemSet(int offset, Value::Ptr v, Ptr nxt): Instr(Op::Set), _value(std::move(v)), _next(std::move(nxt)) {}
+    MemSet(int offset, Ptr nxt): Instr(Op::Set), _next(std::move(nxt)) {}
     virtual ~MemSet()=default;
 
+    int getOffSet() const { return _offset; }
     const auto& getNext() const { return _next; }
     virtual void accept(InstrVisitor&) override;
 private:
 
     int                 _offset;
-    Value::Ptr          _value;
     Ptr                 _next;
 };
 

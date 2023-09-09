@@ -29,5 +29,6 @@ private:
     Instr::Ptr              _code;
     Instr::Ptr              _cont;
     EnvironmentPtr          _env;
+    size_t                  _scopeLevel{0};
 };
 

@@ -44,7 +44,9 @@ void ByteCodeCompiler::forDefine(const Define&) {
 void ByteCodeCompiler::forSetBang(const SetBang&) {
 }
 
-void ByteCodeCompiler::forBegin(const Begin&) {}
+void ByteCodeCompiler::forBegin(const Begin&) {
+
+}
 
 void ByteCodeCompiler::forIf(const If& if_) {
     auto thnc = compile(*if_.thn_, _env, _cont);
@@ -53,7 +55,25 @@ void ByteCodeCompiler::forIf(const If& if_) {
 }
 
 void ByteCodeCompiler::forLet(const Let& let) {
-    // TODO
+    auto envEx = _env->extend(_env);
+
+    int i = 0;
+    for (auto &[k, _]: let.binds_) {
+        envEx->bind(k.v_, _scopeLevel + i++);
+    }
+
+    const size_t nvar = let.binds_.size();
+    _scopeLevel += nvar;
+    auto bodyc = compile(*let.body_, envEx, Instr::New<Pop>(nvar, _cont));
+    _scopeLevel -= nvar;
+
+    auto bindc = bodyc;
+    i = let.binds_.size() - 1;
+    for (auto rit = let.binds_.rbegin(); rit != let.binds_.rend(); ++rit) {
+        auto &[k, v] = *rit;
+        bindc = compile(*v, _env, Instr::New<Push>(bindc));
+    }
+    _code = std::move(bindc);
 }
 
 void ByteCodeCompiler::forLetRec(const LetRec&) {}
